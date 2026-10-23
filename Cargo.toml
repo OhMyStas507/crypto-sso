@@ -1,8 +1,28 @@
 [workspace]
 resolver = "3"
 members = [
-    "sdk",
+    "sdk/core",
+    "sdk/issuer",
+    "sdk/holder",
+    "sdk/verifier",
     "issuer-service",
     "wallet/src-tauri",
     "dev-utils",
 ]
+
+[workspace.dependencies]
+ark-bls12-381 = "0.4"
+ark-ec = "0.4"
+ark-ff = "0.4"
+ark-serialize = "0.4"
+ark-std = "0.4"
+bbs_plus = { version = "=0.25.0", default-features = false, features = ["std"] }
+dock_crypto_utils = { version = "=0.23.0", default-features = false, features = ["std"] }
+rand = "0.8"
+rand_chacha = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2"
+zeroize = { version = "1", features = ["derive", "serde"] }

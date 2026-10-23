@@ -1,0 +1,17 @@
+[package]
+name = "crypto-sso-issuer"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "匿名组织凭证的 issuer 角色接口"
+
+[dependencies]
+crypto-sso-core = { version = "=0.1.0", path = "../core" }
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+rand_chacha.workspace = true

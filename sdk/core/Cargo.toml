@@ -1,0 +1,29 @@
+[package]
+name = "crypto-sso-core"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "匿名组织凭证的协议类型与公共密码学基础"
+
+[dependencies]
+ark-bls12-381.workspace = true
+ark-ec.workspace = true
+ark-ff.workspace = true
+ark-serialize.workspace = true
+ark-std.workspace = true
+bbs_plus.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+url = "2"
+
+[dev-dependencies]
+rand_chacha.workspace = true
+
+[[test]]
+name = "limits"
+harness = false
