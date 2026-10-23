@@ -1,1 +1,3 @@
 target/
+#开发环境临时数据
+.dev-data/

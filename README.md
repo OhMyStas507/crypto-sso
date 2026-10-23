@@ -12,6 +12,7 @@ dev-utils/ 用于开发的工具
 docs/ 文档和开发资料
 issuer-service/ 登录中心后端实现
 sdk/ 算法和验证机制实现
+utils/ 命令行工具（如生成 issuer 私钥，见 [使用说明](utils/README.md)）
 wallet/ 用户本地钱包
 
 SDK 已按 core、issuer、holder、verifier 四个 crate 划分，支持带属性的 BBS+ 盲签发与选择披露。使用方式和检查命令见 [SDK README](sdk/README.md)，测试文档全部 89 个编号的覆盖入口见 [测试覆盖清单](sdk/TEST-COVERAGE.md)。
