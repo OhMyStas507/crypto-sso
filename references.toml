@@ -1,6 +1,7 @@
 # 参考仓库列表。name 是 docs/references 下的目录名，branch 可选。
-# [[repositories]]
-# name = "example"
-# url = "https://github.com/owner/example.git"
-# branch = "main"
+
+[[repositories]]
+name = "org-anon-auth"
+url = "git@github.com:yhw2003/org-anon-auth.git"
+branch = "main"
 
