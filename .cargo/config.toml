@@ -1,0 +1,2 @@
+[alias]
+fetch-refs = "run -p dev-utils --bin fetch-references"

@@ -3,5 +3,6 @@ resolver = "3"
 members = [
     "sdk",
     "issuer-service",
-    "wallet/src-tauri"
-, "dev-utils"]
+    "wallet/src-tauri",
+    "dev-utils",
+]
