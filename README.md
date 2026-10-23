@@ -11,6 +11,7 @@
 dev-utils/ 用于开发的工具
 docs/ 文档和开发资料
 issuer-service/ 登录中心后端实现
+issuer-service-webui/ 登录中心前端实现
 sdk/ 算法和验证机制实现
 utils/ 命令行工具（如生成 issuer 私钥，见 [使用说明](utils/README.md)）
 wallet/ 用户本地钱包
