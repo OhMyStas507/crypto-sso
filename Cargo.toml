@@ -12,21 +12,23 @@ members = [
 ]
 
 [workspace.dependencies]
-ark-bls12-381 = "0.4"
-ark-ec = "0.4"
-ark-ff = "0.4"
-ark-serialize = "0.4"
-ark-std = "0.4"
+# bbs_plus 0.25 and dock_crypto_utils 0.23 require arkworks 0.4,
+# rand 0.8 (rand_chacha 0.3), and digest 0.10 (sha2 0.10).
+ark-bls12-381 = "0.4.0"
+ark-ec = "0.4.2"
+ark-ff = "0.4.2"
+ark-serialize = "0.4.2"
+ark-std = "0.4.0"
 bbs_plus = { version = "=0.25.0", default-features = false, features = ["std"] }
 dock_crypto_utils = { version = "=0.23.0", default-features = false, features = ["std"] }
-rand = "0.8"
-rand_chacha = "0.3"
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["raw_value"] }
-sha2 = "0.10"
-hex = "0.4"
-thiserror = "2"
-zeroize = { version = "1", features = ["derive", "serde"] }
-anyhow = "1"
-clap = { version = "4", features = ["derive"] }
-tempfile = "3"
+rand = "0.8.8"
+rand_chacha = "0.3.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["raw_value"] }
+sha2 = "0.10.9"
+hex = "0.4.3"
+thiserror = "2.0.21"
+zeroize = { version = "1.9.1", features = ["derive", "serde"] }
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+tempfile = "3.27.0"

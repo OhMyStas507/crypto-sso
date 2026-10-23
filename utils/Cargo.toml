@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-clap = { version = "4", features = ["derive"] }
+clap.workspace = true
 crypto-sso-issuer = { version = "=0.1.0", path = "../sdk/issuer" }
 rand.workspace = true
 tempfile.workspace = true   
