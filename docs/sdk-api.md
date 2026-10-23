@@ -18,6 +18,7 @@ sdk/
 │   └── src/
 │       ├── lib.rs                # 共享值类型、协议常量、Core Error
 │       ├── wire.rs               # 交换消息、严格 JSON 编解码
+│       ├── limits.rs             # ClaimsLimits、共享静态配置与初始化接口
 │       ├── origin.rs             # origin 规范化
 │       ├── secret.rs             # SecretBytes
 │       └── internal/             # 固定参数、转录、群元素、公共数学函数
@@ -67,6 +68,7 @@ core 包含密码学依赖，因为组织指纹、点解码和公共参数属于
 use crypto_sso_issuer::{
     Issuer, IssuerPublic, EnrollmentRequest, BlindCredential,
     Claims, IssuerId, RequestId, RequestHash, SecretBytes, Error, Result, wire,
+    ClaimsLimits, DEFAULT_CLAIMS_LIMITS, claims_limits, set_claims_limits,
 };
 
 // 钱包 Rust 后端
@@ -74,6 +76,7 @@ use crypto_sso_holder::{
     Holder, PendingEnrollment, IssuerPublic, EnrollmentRequest, BlindCredential,
     LoginChallenge, Presentation, Origin, IssuerId, RequestId, RequestHash, Nonce,
     Claims, ClaimKeys, DisclosedClaim, SecretBytes, Error, Result, wire,
+    ClaimsLimits, DEFAULT_CLAIMS_LIMITS, claims_limits, set_claims_limits,
 };
 
 // 应用后端
@@ -82,6 +85,7 @@ use crypto_sso_verifier::{
     VerifiedProof, Claims, ClaimKeys, DisclosedClaim,
     ClientBindingSecret, Origin, IssuerId, Nonce, Subject,
     Error, Result, wire,
+    ClaimsLimits, DEFAULT_CLAIMS_LIMITS, claims_limits, set_claims_limits,
 };
 ```
 
@@ -89,7 +93,7 @@ use crypto_sso_verifier::{
 
 | 定义所在包 | 定义的类型 |
 |---|---|
-| `crypto-sso-core` | `IssuerPublic`、`EnrollmentRequest`、`BlindCredential`、`LoginChallenge`、`Presentation` 及其内嵌 DTO `DisclosedClaim`；`Claims`、`ClaimKeys`、`Origin`、`IssuerId`、`RequestId`、`RequestHash`、`Nonce`、`Subject`；`SecretBytes`、协议常量、公共编解码及基础错误 |
+| `crypto-sso-core` | `IssuerPublic`、`EnrollmentRequest`、`BlindCredential`、`LoginChallenge`、`Presentation` 及其内嵌 DTO `DisclosedClaim`；`Claims`、`ClaimKeys`、`Origin`、`IssuerId`、`RequestId`、`RequestHash`、`Nonce`、`Subject`；`ClaimsLimits` 及共享配置接口、`SecretBytes`、协议常量、公共编解码及基础错误 |
 | `crypto-sso-issuer` | `Issuer`、签发私密备份的内部结构、签发角色的 `Error/Result` |
 | `crypto-sso-holder` | `Holder`、`PendingEnrollment`、钱包私密备份的内部结构、持有角色的 `Error/Result` |
 | `crypto-sso-verifier` | `Verifier`、`ClientBindingSecret`、`VerifiedProof`、验证角色的 `Error/Result` |
@@ -203,7 +207,7 @@ impl ClaimKeys {
 // Presentation 内嵌的不可信 DTO；index 为属性槽位，不是 BBS+ 消息索引。
 #[derive(Clone, Eq, PartialEq)]
 pub struct DisclosedClaim {
-    pub index: u16,
+    pub index: u64,
     pub key: String,
     pub value: String,
 }
@@ -211,8 +215,10 @@ pub struct DisclosedClaim {
 
 构造和解析必须遵守以下规则，角色方法也要校验可变 DTO 的当前内容：
 
-- `Claims` 最多 32 对属性，`ClaimKeys` 最多 32 个键。键匹配 ASCII 正则 `[a-z][a-z0-9_.-]{0,63}`，区分不同键名，不做大小写折叠或别名替换。
-- 值是最多 1024 字节的有效 UTF-8 字符串，允许空字符串；一份属性集合的键和值 UTF-8 字节数之和最多 8 KiB。字符串不做 trim、Unicode 归一化或隐式类型转换。
+- SDK 不设固定的 Claims 字段数量上限。`Claims` 和 `ClaimKeys` 的最大键数量由调用方通过第 7.2 节的共享静态配置设置，默认每个集合最多 128 个键；这不是进程内所有集合的累计配额。
+- 键匹配 ASCII 正则 `[a-z][a-z0-9_.-]*`，键名长度另按配置的 `max_key_bytes` 检查，默认 64 字节。不同键名不做大小写折叠或别名替换。
+- 值为有效 UTF-8 字符串，长度按配置的 `max_value_bytes` 检查，默认 1024 字节，允许空字符串；字符串不做 trim、Unicode 归一化或隐式类型转换。键名和值的长度分别配置，均按 UTF-8 字节数计算。
+- 不另设固定的属性总字节数上限；属性总量由配置的键数量、单键及单值长度共同约束。所有计数、长度累加、消息数量和平台类型转换均检查溢出，不能通过截断或整数回绕绕过校验。
 - `Claims::new` 和 JSON 解析均在收集成映射前拒绝重复键，不能静默保留首项或末项。`ClaimKeys::new` 同样拒绝重复键。两者均按键的 ASCII 字节序排序。
 - 空集合表示没有属性或没有选择披露。省略的键与值为空字符串的键不同；`ClaimKeys` 不支持通配符。
 - `Claims` 在验真前只代表数据格式有效。只有 `Holder::claims()` 和 `VerifiedProof::disclosed_claims()` 分别代表本地已验证凭证的属性和本次证明中已验证的披露属性。
@@ -232,13 +238,15 @@ pub struct DisclosedClaim {
 
 `LP` 为 `u64` 小端字节长度前缀加原始 UTF-8 字节；`H_scalar` 为 SHA-512 输出按小端整数约减到 BLS12-381 标量域。键和值作为一条消息共同哈希，且使用独立类型与用途标签，不能仅签值、仅签属性总哈希，或只把属性加入登录挑战。空属性集合仍签署前三条消息。
 
-参数使用 `crypto-sso/v1/bbsplus/fixed-parameters` 标签公开、确定性地派生最多 35 条消息的完整参数组；每张凭证使用该组前 `3 + n` 个消息基点，其余公共基点保持相同。组织指纹绑定 v1、组织、公钥和这组完整固定参数，不随本次属性数量或披露选择变化。禁止 issuer 或钱包提供个性化参数。组织消息由该指纹在 `crypto-sso/v1/organization-message` 域中派生。
+参数使用 `crypto-sso/v1/bbsplus/fixed-parameters` 标签公开、确定性地按需派生，不预先限定消息基点数量。固定用途基点使用各自用途标签；第 `j` 个消息基点以 `LP("crypto-sso/v1/bbsplus/fixed-parameters") || LP("message") || u64_le(j)` 为输入进行 hash-to-curve。每张凭证使用前 `3 + n` 个消息基点，已存在索引的基点不随本次请求数量或本地配置变化，其余公共基点也保持相同。实现应按实际所需数量派生或扩展缓存，不能按配置上限预分配整组参数。
+
+组织指纹绑定 v1、组织、公钥和固定参数派生规则的标识；标识固定曲线与散列套件、派生标签及索引编码规则，不枚举一个有限的“完整消息基点组”，也不绑定本地 `ClaimsLimits`、本次属性数量或披露选择。禁止 issuer 或钱包提供个性化参数或生成规则。组织消息由该指纹在 `crypto-sso/v1/organization-message` 域中派生。
 
 签发时，钱包只对索引 0 的秘密 `x` 和盲因子作承诺并证明知道开口；issuer 能看到完整属性，核准后将索引 1、2 和所有属性消息作为已知消息加入同一个 BBS+ 盲签名。承诺知识证明的 Fiat–Shamir 转录使用 `crypto-sso/v1/enrollment-proof` 域，并绑定版本、组织指纹、请求 ID、本次参数、承诺、证明承诺及完整规范属性集合。属性也必须进入 `request_hash`。传输保密和业务身份核验由集成方负责。
 
 出示时，钱包为选中的每个键发送 `DisclosedClaim { index: i, key, value }`，公开它对应的 BBS+ 消息 `3 + i`；所有未选属性的消息保持隐藏，`x` 始终隐藏。应用根据键值重新计算消息，验证它们与签名、公开的属性数量及应用化名属于同一张凭证。不能用独立属性签名与独立登录证明拼接，也不能向应用发送原始凭证签名。
 
-`Presentation` 携带公开的 `claim_count = n`。验真必须要求 `0 <= n <= 32`、每项 `index < n`，索引和键分别唯一，披露项按索引严格递增，且可见键遵守相同的升序关系；消息数量严格为 `3 + n`。公开消息集合恰为索引 1、2 及全部披露槽位，隐藏消息集合为其余位置。证明结构、隐藏消息响应数量和资源上限必须依此计算，不能假定只有一个隐藏消息，也不能接受部分响应证明。
+`Presentation` 携带公开的 `claim_count = n`。`claim_count` 和披露 `index` 使用 `u64`；验真要求 `n` 不超过当前本地 `max_keys`、每项 `index < n`，索引和键分别唯一，披露项按索引严格递增，且可见键遵守相同的升序关系；消息数量严格为 `3 + n`。所有 `u64`、`usize` 转换及 `3 + n` 等运算必须检查溢出和可表示性，不另设置固定字段数阈值。公开消息集合恰为索引 1、2 及全部披露槽位，隐藏消息集合为其余位置。证明结构、隐藏消息响应数量和资源约束必须按当前配置和实际数量计算，不能假定只有一个隐藏消息，也不能接受部分响应证明。
 
 登录证明在 `crypto-sso/v1/login-proof` 域中绑定完整挑战（含 `required_claims`）、`claim_count`、每个披露项的索引、键和值、公钥、化名上下文和 BBS+ 的完整挑战贡献。化名基点继续使用对组织指纹和规范 origin 的 hash-to-curve，在 v1 独立域中派生；化名 `N = x·B` 的证明必须复用同一 BBS+ 证明中索引 0 的秘密响应。增加多个隐藏属性后，仍须从正确消息索引提取该响应。
 
@@ -253,7 +261,7 @@ pub struct DisclosedClaim {
 | `EnrollmentRequest` | `claims: Claims`，JSON 对象，例如 `{"department":"engineering","role":"member"}` | 钱包申请签署的数据，尚未经 issuer 核准 |
 | `BlindCredential` | `claims: Claims`，与请求完全相同的 JSON 对象 | 解盲并验证签名后才可信 |
 | `LoginChallenge` | `required_claims: ClaimKeys`，JSON 字符串数组 | 应用要求本次必须披露的键，钱包仍需取得用户同意 |
-| `Presentation` | `claim_count: u16`；`disclosed_claims: Vec<DisclosedClaim>`，JSON 数组项字段顺序为 `index`、`key`、`value` | 验真前均是不可信输入 |
+| `Presentation` | `claim_count: u64`；`disclosed_claims: Vec<DisclosedClaim>`，数组项 `index` 为 `u64`，字段顺序为 `index`、`key`、`value` | 验真前均是不可信输入 |
 | `IssuerPublic` | 无新增业务字段；`version` 固定为 1，按本文参数解释 | 仍需可信分发 |
 
 Rust DTO 的新增字段与上表同名，均为 `pub`。所有集合字段必须显式出现，空值编码为 `{}` 或 `[]`，不使用省略或 `null`。`Claims` 编码为按键排序的 JSON 对象，`ClaimKeys` 编码为按键排序的 JSON 数组；`disclosed_claims` 按槽位排序。字段中 JSON 转义与未转义字符解析为同一字符串后，按相同规范重编码。
@@ -426,7 +434,7 @@ impl LoginChallenge {
 
 impl Presentation {
     pub fn challenge(&self) -> &LoginChallenge;
-    pub fn claim_count(&self) -> u16;
+    pub fn claim_count(&self) -> u64;
     pub fn disclosed_claims(&self) -> &[DisclosedClaim];
 }
 
@@ -475,15 +483,12 @@ impl VerifiedProof {
 
 ## 7. 时间与资源约束
 
+### 7.1. 登录挑战时间
+
 ```rust
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_CHALLENGE_TTL_SECS: u64 = 120;
 pub const MAX_FUTURE_SKEW_SECS: u64 = 30;
-pub const MAX_MESSAGE_BYTES: usize = 16 * 1024;
-pub const MAX_CLAIMS: usize = 32;
-pub const MAX_CLAIM_KEY_BYTES: usize = 64;
-pub const MAX_CLAIM_VALUE_BYTES: usize = 1024;
-pub const MAX_CLAIMS_BYTES: usize = 8 * 1024;
 ```
 
 `now`、`issued_at`、`expires_at` 均为 Unix 秒，使用 `u64`。所有加减法检查溢出。
@@ -495,6 +500,49 @@ pub const MAX_CLAIMS_BYTES: usize = 8 * 1024;
 - HTTP 和异步框架应在阻塞任务池中调用证明生成、验真方法，并在入口限制请求大小与并发量。
 
 验真结束后到原子消费之间，应用应重新读取当前时间，并在消费条件中再次检查有效期。不要仅凭进入验真前的时间创建会话。
+
+### 7.2. 调用方配置 Claims 限制
+
+以下类型、默认值和函数定义在 core，并由三个角色包重导出。三个角色在同一进程中共享同一个 core 静态变量，不分别保存限制。此处 `Result` 为 core 的 `Result`。
+
+```rust
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClaimsLimits {
+    pub max_keys: usize,
+    pub max_key_bytes: usize,
+    pub max_value_bytes: usize,
+}
+
+pub const DEFAULT_CLAIMS_LIMITS: ClaimsLimits = ClaimsLimits {
+    max_keys: 128,
+    max_key_bytes: 64,
+    max_value_bytes: 1024,
+};
+
+// core 内部私有，不允许调用方直接访问或取得引用。
+static mut CLAIMS_LIMITS: ClaimsLimits = DEFAULT_CLAIMS_LIMITS;
+
+// 按值返回当前配置快照。
+pub fn claims_limits() -> ClaimsLimits;
+
+/// # Safety
+/// 只能在进程初始化、其他 SDK 调用开始之前设置。
+/// 调用方须保证没有任何并发 SDK 读取或配置写入，
+/// 并在 SDK 开始使用后保持配置不变。
+pub unsafe fn set_claims_limits(limits: ClaimsLimits) -> Result<()>;
+```
+
+配置契约：
+
+- `max_keys` 限制单个完整属性集合、选择键集合和挑战必需键集合的键数量；也用于校验 `Presentation::claim_count` 及披露项数量。`max_key_bytes` 和 `max_value_bytes` 分别限制解码后单个键名和属性值的 UTF-8 字节数。
+- 默认 128 个键、64 字节键名和 1024 字节值仅为可调整的部署策略，不是协议硬上限。SDK 不再导出固定的 `MAX_CLAIMS`、`MAX_CLAIM_KEY_BYTES`、`MAX_CLAIM_VALUE_BYTES`、`MAX_CLAIMS_BYTES` 或 `MAX_MESSAGE_BYTES`。调用方可以把 `max_keys` 设置为 `usize::MAX`，表示不施加额外的本地字段数策略；编码可表示性及实际内存需求仍由具体操作检查。
+- `max_key_bytes` 必须至少为 1，否则 `set_claims_limits` 返回 `InvalidClaimsLimits` 并保留原配置。`max_keys=0` 合法，表示仅允许空集合；`max_value_bytes=0` 合法，表示属性值只能为空字符串。设置函数不按容量创建参数组、缓冲区或其他预分配。
+- `unsafe` 入口用于承担共享可变静态变量的初始化与并发约束；它不跳过属性校验。配置校验失败保持原状态。实现必须按值读取静态变量，避免暴露 `static mut` 引用，并在函数体中显式使用必要的 `unsafe` 块。
+- SDK 操作使用当前配置的值副本，向内部校验传递同一快照。属性构造、wire 输入输出、签发、解盲、出示、验真及私密备份导入导出均执行对应限制，不能只在 `Claims::new` 时检查。
+- 该配置只影响本进程的接收和生成策略，不写入交换消息、秘密备份、请求哈希、issuer 指纹、签名消息或证明转录。不同进程可使用不同配置；接收端按自身配置拒绝超限输入，配置变化本身不改变合法凭证的 subject 或协议编码。
+- 没有额外固定的属性总字节数或整体消息字节数上限。SDK 按实际结构和上述配置限制字段及容器，所有容量计算检查溢出，不能按不可信长度或极大的配置值直接分配。HTTP body、文件和本地备份的读取总量由调用方在入口限制。
+
+配置必须在其他 SDK 访问前完成，不得用热更新配置改变已经运行的 SDK。并行测试不得在同一进程中反复修改静态变量；不同配置使用独立测试进程，详见 [SDK 测试文档](sdk-test.md)。
 
 ## 8. 公共消息编解码与秘密备份
 
@@ -515,17 +563,17 @@ impl SecretBytes {
 }
 ```
 
-公共消息集合为 `IssuerPublic`、`EnrollmentRequest`、`BlindCredential`、`LoginChallenge`、`Presentation`。`Claims`、`ClaimKeys` 和 `DisclosedClaim` 只作为内嵌字段编码，不是额外的顶层 `WireMessage`。`to_json` 按固定顶层字段顺序输出紧凑的 v1 JSON，`from_json` 先检查总字节数，再按封闭结构解析与校验。
+公共消息集合为 `IssuerPublic`、`EnrollmentRequest`、`BlindCredential`、`LoginChallenge`、`Presentation`。`Claims`、`ClaimKeys` 和 `DisclosedClaim` 只作为内嵌字段编码，不是额外的顶层 `WireMessage`。`to_json` 按固定顶层字段顺序输出紧凑的 v1 JSON，`from_json` 取得当前 `ClaimsLimits` 快照，再按封闭结构解析并逐项校验数量和长度；输入总量由调用方先行限制。
 
 解析必须拒绝未知或重复字段、非支持版本、非规范 hex、无效群元素、尾随字节、超长字段及非法证明结构。`claims` 内的业务键属于允许的扩展数据，须按第 3.1 节校验；顶层及 `DisclosedClaim` 的结构字段仍拒绝未知字段。解析映射前必须检测重复业务键，不能让 JSON 库先覆盖；披露项还需检测重复索引和重复键。对证明内嵌的可变长度容器，也必须按属性数量和披露数量限制其长度和分配量，不能只限制外层字符串长度。
 
-输入 JSON 对象的字段顺序可以不同，规范输出和 `request_hash` 均使用固定顺序；`ClaimKeys` 数组及 `disclosed_claims` 数组则必须已经按协议排序，不静默修正重复或错序输入。属性总字节数限制按解码后的 UTF-8 字节计算，包含 JSON 转义和证明的整个编码消息仍须满足 `MAX_MESSAGE_BYTES`。`to_json` 同样拒绝超限输出；秘密备份导入导出也适用整体大小上限。
+输入 JSON 对象的字段顺序可以不同，规范输出和 `request_hash` 均使用固定顺序；`ClaimKeys` 数组及 `disclosed_claims` 数组则必须已经按协议排序，不静默修正重复或错序输入。键名和值的长度按解码后的 UTF-8 字节计算，不按 JSON 转义后的文本长度计算。`to_json` 与秘密备份导入导出同样执行当前配置的字段数量和长度限制；SDK 不施加额外固定的集合或消息总字节数上限。
 
 JSON 中的 origin 必须已经是规范形式，解析时与规范化结果比较，不静默改写输入；只有业务配置调用 `Origin::parse` 时接受并规范化大小写、默认端口等形式，以保持参考协议的 origin 校验行为。
 
 首版不为公共消息提供绕过这些检查的通用 `Deserialize` 入口。HTTP 框架先读取有上限的 body，再调用 `wire::from_json`；文件读取也由调用方先限制大小。内部 Serde DTO 不导出。
 
-`export_secret` 返回的 `SecretBytes` 是未加密的秘密 JSON，调用方应直接交给本地加密或安全存储层。`import_secret` 同样先限制大小再检查数据。SDK 不替调用方清理传入切片对应的内存。
+`export_secret` 返回的 `SecretBytes` 是未加密的秘密 JSON，调用方应直接交给本地加密或安全存储层。`import_secret` 按当前配置检查字段与结构，调用方负责先限制读取总量。SDK 不替调用方清理传入切片对应的内存。
 
 `SecretBytes::from_vec` 转移字节缓冲区的所有权，方便各角色包构造擦除容器；它不校验凭证或秘密格式，也不等于导入秘密。三个角色的私密备份格式、校验和导入导出逻辑各自保留在所属角色包，core 不定义含 issuer 私钥或 holder 主秘密的备份 DTO。
 
@@ -545,6 +593,7 @@ pub enum Error {
     InvalidIssuer,
     InvalidOrigin,
     InvalidClaims,
+    InvalidClaimsLimits,
     Serialization,
     Crypto,
 }
@@ -593,7 +642,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 以上代码块分别属于不同 crate。各 `Error` 实现 `std::error::Error` 与 `Display`，并实现从 core 错误的转换；不包含原始秘密、原始输入或敏感密码学中间值。core 的 `Crypto` 表示基础数学运算失败，不暴露底层秘密中间值。
 
-- core 的 `InvalidClaims` 表示属性或键集合不满足类型、键语法、重复检查、顺序或字节数与数量限制；资源超限也可使用带上限的 `InputTooLarge`。
+- core 的 `InvalidClaims` 表示属性或键集合不满足类型、键语法、重复检查、顺序或当前配置的字节数与数量限制；资源超限也可使用带当前上限的 `InputTooLarge`。`InvalidClaimsLimits` 表示传入设置函数的配置不合法，不表示某份属性内容超限。
 - issuer 的 `ClaimsMismatch` 表示钱包申请的完整属性集合与服务层核准集合不同，必须在签名前拒绝。
 - `EnrollmentMismatch` 表示盲签响应与本地 pending 的请求上下文或完整属性集合不一致。
 - `InvalidCredential` 表示签名与持有秘密、组织绑定或完整属性不成立。
@@ -614,8 +663,19 @@ use crypto_sso_issuer::{Issuer, EnrollmentRequest};
 use crypto_sso_holder::{Holder, PendingEnrollment, BlindCredential, Claims, ClaimKeys};
 use crypto_sso_verifier::{
     Verifier, ClientBindingSecret, Origin, LoginChallenge, Presentation, wire,
+    ClaimsLimits, set_claims_limits,
 };
 use rand::rngs::OsRng;
+
+// 进程启动时、其他 SDK 调用及工作线程启动之前设置一次。
+// 此处三方处于同一示例进程，共享 core 静态配置；实际部署各进程分别配置。
+unsafe {
+    set_claims_limits(ClaimsLimits {
+        max_keys: 256,
+        max_key_bytes: 128,
+        max_value_bytes: 2048,
+    })?;
+}
 
 // 初始化并可信分发组织公钥。
 let mut rng = OsRng;
@@ -781,18 +841,19 @@ SDK 内部版本同步发布，先发布 core，再发布三个角色包。生�
 实施顺序：
 
 1. 建立四个 crate、统一依赖版本与根 workspace 成员，删除原始 sdk 模板。
-2. 实现 core 的 v1 消息、`Claims`/`ClaimKeys`、严格编解码、规范哈希、固定参数和 SecretBytes。
+2. 实现 core 的 v1 消息、`Claims`/`ClaimKeys`、共享静态 `ClaimsLimits` 及初始化接口、严格编解码、规范哈希、按需参数派生和 SecretBytes。
 3. 实现 issuer 与 holder，完成属性核准匹配、带属性的盲签发、完整 pending 保存恢复和本地解盲验签。
 4. 实现 verifier 与 holder 的证明生成，完成显式选择披露、必需属性检查、应用挑战、客户端绑定和组合证明验真。
-5. 在 verifier 的 dev-dependencies 集成测试中跑通三方流程，生成并重验 v1 签发与多种披露子集的 JSON 测试样本。
+5. 在 verifier 的 dev-dependencies 集成测试中以 0、1、3 对属性跑通三方流程，生成并重验 v1 签发与多种披露子集的 JSON 测试样本，不进行大规模 Claims 压力测试。
 6. 通过 `cargo tree -p <角色包> -e normal` 检查正常依赖；三个角色之间不能出现依赖边。
 
 各 SDK 包分别执行测试与静态检查，例如 `cargo test -p crypto-sso-core -p crypto-sso-issuer -p crypto-sso-holder -p crypto-sso-verifier`。不以整个 Tauri workspace 的构建代替 SDK 自身检查。
 
-- 三方接口完成带属性的盲签发、解盲和离线证明验真；0 对、1 对和 32 对属性的边界均有覆盖。
+- 三方接口以 0、1、3 对属性完成盲签发、解盲和离线证明验真；多个隐藏属性、不同披露槽位及随机化均在小规模样本中验证，不要求测试默认容量上限、压力或性能。
+- 配置接口和当前限制的校验通过单元测试完成；使用独立进程和较小自定义阈值覆盖默认值、设置成功、非法配置不生效及数量和长度边界，不能并行修改同一个静态变量。
 - 钱包提交的集合与 issuer 核准集合不一致（含越权 `role=admin`、缺失或额外属性）时签发失败；同一请求 ID 修改任意键值会改变请求哈希并被台账拒绝。
 - 属性插入顺序和 JSON 对象输入顺序不影响规范请求哈希；键名、值、空字符串和缺失键能被明确区分，Unicode 值按规定字节处理。
-- 非法键、重复业务键、重复选择键、重复披露索引或键、越界索引、错序数组、错误类型、过多属性及各级超长输入均被拒绝，证明内嵌长度也受限制。
+- 非法键、重复业务键、重复选择键、重复披露索引或键、越界索引、错序数组、错误类型、超过当前本地配置的数量和长度均被拒绝，证明内嵌长度也按实际属性数量校验。
 - 全部披露、部分披露、完全不披露及同一凭证的不同披露子集均可验真；请求未知键或缺少必需披露键会失败，应用只从 `VerifiedProof` 取得已验证的键值。
 - 修改披露键或值、删除必需项、调换索引、篡改 `claim_count`、增补未签署属性、复用证明后增删披露项、跨凭证拼接均被拒绝。
 - 未披露键名、值、属性哈希、完整键清单、整份属性摘要、请求标识和原始签名不出现在出示消息中；属性数量与公开槽位属于明确的可见信息。
