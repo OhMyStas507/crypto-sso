@@ -50,7 +50,7 @@ node scripts/dev-compose.mjs down -v
 
 ## 注册中心与钱包
 
-应用基础配置从环境变量读取，开发时使用根目录 `.env`；Docker 基础设施单独由 Compose 文件配置。执行 `./scripts/setup-dev.ps1` 可生成应用开发配置、固定签发密钥及管理员密码；完整准备、启动和验收步骤见 [部署说明](deploy/README.md)。
+应用基础配置从环境变量读取，开发时使用根目录 `.env`；Docker 基础设施单独由 Compose 文件配置。执行 `node scripts/setup-dev.js` 可生成应用开发配置、固定签发密钥及管理员密码；完整准备、启动和验收步骤见 [部署说明](deploy/README.md)。
 
 - 注册中心使用 Salvo 的显式路由与独立 Handler、Session 和 CSRF 中间件；业务数据使用独立 Toasty 模型，以原生 `create!`、`get_by_*`、更新/删除构造器及关联查询持久化至 PostgreSQL。中心和示例应用启动时自动应用 Toasty 迁移，完成后再接收请求；业务直接使用 Toasty 原生事务、Serializable 隔离与自动回滚。应用日志使用 `tracing`，通过 `RUST_LOG` 配置级别。
 - 管理后台实现服务设置、Claims 建议、人工核验与审批、成员查询、签发台账和审计。

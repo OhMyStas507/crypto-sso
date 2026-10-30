@@ -11,14 +11,14 @@
 ```powershell
 node scripts/dev-compose.mjs up -d --wait
 node scripts/init-dev-db.mjs
-./scripts/setup-dev.ps1
+node scripts/setup-dev.js
 bun install --cwd issuer-service-webui
 bun install --cwd wallet
 bun install --cwd examples/relying-party/web
 bun install --cwd scripts
 ```
 
-`setup-dev.ps1` 创建 `.env`、固定 issuer 密钥和随机管理员密码，终端仅显示一次开发密码；已有 `.env` 时拒绝覆盖。已有 issuer 私钥会被保留。也可以手工复制 `.env.example`，使用 `utils` 生成密钥，并设置 `ADMIN_BOOTSTRAP_PASSWORD` 后运行 `cargo run -p issuer-service --bin hash-password` 得到 Argon2id 哈希。密码哈希应使用单引号写入 `.env`，避免 `$` 被环境替换。
+`setup-dev.js` 使用 Node.js 内置模块创建 `.env`、固定 issuer 密钥和随机管理员密码，终端仅显示一次开发密码；已有 `.env` 时拒绝覆盖。已有 issuer 私钥会被保留。可通过 `node scripts/setup-dev.js --organization "组织名称"` 指定组织，默认使用“本地开发身份中心”。也可以手工复制 `.env.example`，使用 `utils` 生成密钥，并设置 `ADMIN_BOOTSTRAP_PASSWORD` 后运行 `cargo run -p issuer-service --bin hash-password` 得到 Argon2id 哈希。密码哈希应使用单引号写入 `.env`，避免 `$` 被环境替换。
 
 `dev-compose.mjs` 为 Docker Compose 显式设置 `COMPOSE_DISABLE_ENV_FILE=true`，可透传 `up`、`ps`、`logs`、`down` 等命令，既不加载 `.env`，也不依赖其中的值。也可在终端先设置此开关，再直接运行 `docker compose -f deploy/compose.dev.yaml ...`。
 
