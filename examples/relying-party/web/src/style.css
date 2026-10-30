@@ -1,0 +1,122 @@
+:root {
+  font:
+    13px "Segoe UI",
+    "Microsoft YaHei UI",
+    sans-serif;
+  color: #25262c;
+  background: #fafafa;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  width: min(760px, calc(100% - 48px));
+  margin: 40px auto;
+  background: white;
+  border: 1px solid #e9e9ed;
+  border-radius: 8px;
+  padding: 28px 34px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e9e9ed;
+  font-weight: 600;
+}
+.mark {
+  font-size: 23px;
+  color: #655cc6;
+}
+.muted {
+  color: #85858f;
+  font-size: 11px;
+  font-weight: 400;
+}
+h1 {
+  font-size: 23px;
+  margin-top: 28px;
+}
+h2 {
+  font-size: 14px;
+}
+p {
+  line-height: 1.9;
+  color: #686872;
+}
+dl {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 14px;
+  padding: 20px 0;
+  border-bottom: 1px solid #e9e9ed;
+}
+dt {
+  color: #85858f;
+}
+dd {
+  margin: 0;
+  font:
+    11px Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+section {
+  padding: 15px 0;
+  border-bottom: 1px solid #e9e9ed;
+}
+button {
+  border: 1px solid #6057bc;
+  border-radius: 5px;
+  background: #655cc6;
+  color: white;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+button.secondary {
+  background: white;
+  border-color: #dcdce3;
+  color: #494953;
+}
+textarea {
+  display: block;
+  width: 100%;
+  height: 150px;
+  padding: 12px;
+  margin: 14px 0;
+  border: 1px solid #dcdce3;
+  border-radius: 5px;
+  font:
+    11px/1.8 Consolas,
+    monospace;
+  resize: vertical;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 15px;
+  border: 1px solid #e9e9ed;
+  background: #fafafb;
+  font-size: 11px;
+}
+footer {
+  font-size: 10px;
+  color: #85858f;
+  margin-top: 25px;
+}
+.error {
+  color: #b55b61;
+  background: #fffafa;
+  padding: 12px;
+  border: 1px solid #ead8da;
+  border-radius: 5px;
+}

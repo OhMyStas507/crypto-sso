@@ -23,6 +23,26 @@ tauri = { version = "2.12.5", features = [] }
 tauri-plugin-opener = "2.7.2"
 serde.workspace = true
 serde_json.workspace = true
+crypto-sso-identity-api = { path = "../../crates/identity-api" }
+crypto-sso-telemetry = { path = "../../crates/telemetry" }
+tracing.workspace = true
+rand.workspace = true
+hex.workspace = true
+zeroize.workspace = true
+anyhow.workspace = true
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+aes-gcm = "0.10"
+fs2 = "0.4"
+tempfile.workspace = true
+dotenvy = "0.15"
+ts-rs = { version = "11", features = ["serde-json-impl"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+
+[dev-dependencies]
+crypto-sso-issuer = { path = "../../sdk/issuer" }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

@@ -1,0 +1,791 @@
+//! Real PostgreSQL, Salvo HTTP, encrypted wallet and verifier acceptance tests.
+//! Run only against a dedicated *_test database: cargo test -p crypto-sso-relying-party --test end_to_end -- --ignored
+use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+use crypto_sso_holder::{ClaimKeys, Claims, Holder, Origin, wire};
+use crypto_sso_identity_api::{ClaimHint, EnrollmentStatus, ReviewDecision, SubmitEnrollment};
+use crypto_sso_issuer::Issuer;
+use crypto_sso_relying_party::{App as RelyingParty, StoredChallenge};
+use issuer_service::{
+    application::Application,
+    config::Config,
+    domain::{Enrollment, Member},
+    models::{
+        ApplicationSession, AuditRecord, ClaimHintRevision, Idempotency, IssuerMetadata,
+        RevokedSession, Settings, WebSession,
+    },
+    security::{now, token},
+    store::Store,
+    worker,
+};
+use rand::rngs::OsRng;
+use reqwest::Client;
+use salvo::prelude::*;
+use serde_json::{Value, json};
+use std::{collections::BTreeMap, sync::Arc};
+use wallet_lib::engine::Engine;
+
+fn submit(
+    request: &crypto_sso_holder::EnrollmentRequest,
+    revision: Option<u32>,
+) -> SubmitEnrollment {
+    SubmitEnrollment {
+        enrollment_request: serde_json::value::RawValue::from_string(
+            String::from_utf8(wire::to_json(request).unwrap()).unwrap(),
+        )
+        .unwrap(),
+        claim_hints_revision: revision,
+        application_note: Some("test application".into()),
+    }
+}
+fn decision(e: &Enrollment, member: &str) -> ReviewDecision {
+    ReviewDecision {
+        expected_revision: e.view.revision,
+        request_hash: e.view.request_hash.clone(),
+        member_ref: Some(member.into()),
+        evidence_source: Some("trusted roster".into()),
+        verification_note: Some("all claims reviewed".into()),
+        internal_note: None,
+        approved_claims: Some(e.claims.0.clone()),
+        public_reason: Some("Please verify your email".into()),
+        claims_confirmed: true,
+    }
+}
+async fn read(app: &Application, id: &str) -> Enrollment {
+    Enrollment::get_by_request_id(&mut app.store.database(), &id.to_owned())
+        .await
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires a dedicated PostgreSQL TEST_DATABASE_URL and Windows DPAPI"]
+async fn registration_approval_wallet_recovery_and_offline_login() {
+    let _ = dotenvy::dotenv();
+    let database = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is required");
+    assert!(
+        database.split('?').next().unwrap().ends_with("_test"),
+        "tests may only clear a dedicated *_test database"
+    );
+    let temporary = tempfile::tempdir().unwrap();
+    let issuer = Issuer::generate("Integration identity center", &mut OsRng).unwrap();
+    let secret_path = temporary.path().join("issuer-secret.json");
+    let public_path = temporary.path().join("issuer-public.json");
+    std::fs::write(
+        &secret_path,
+        issuer.export_secret().unwrap().expose_secret(),
+    )
+    .unwrap();
+    std::fs::write(&public_path, wire::to_json(issuer.public()).unwrap()).unwrap();
+    let store = Store::connect(&database).await.unwrap();
+    // Only this explicitly fenced test database is cleared. Delete dependents
+    // before their referenced enrollments; use Toasty builders for every table.
+    let mut db = store.database();
+    let mut tx = db.transaction().await.unwrap();
+    Member::all().delete().exec(&mut tx).await.unwrap();
+    Enrollment::all().delete().exec(&mut tx).await.unwrap();
+    Settings::all().delete().exec(&mut tx).await.unwrap();
+    ClaimHintRevision::all()
+        .delete()
+        .exec(&mut tx)
+        .await
+        .unwrap();
+    IssuerMetadata::all().delete().exec(&mut tx).await.unwrap();
+    Idempotency::all().delete().exec(&mut tx).await.unwrap();
+    AuditRecord::all().delete().exec(&mut tx).await.unwrap();
+    WebSession::all().delete().exec(&mut tx).await.unwrap();
+    RevokedSession::all().delete().exec(&mut tx).await.unwrap();
+    ApplicationSession::all()
+        .delete()
+        .exec(&mut tx)
+        .await
+        .unwrap();
+    StoredChallenge::all().delete().exec(&mut tx).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let acceptor = TcpListener::new("127.0.0.1:0").bind().await;
+    let base = format!("http://{}", acceptor.inner().local_addr().unwrap());
+    let password = token();
+    let hash = Argon2::default()
+        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
+        .unwrap()
+        .to_string();
+    let config = Config {
+        bind: base.trim_start_matches("http://").into(),
+        database_url: database.clone(),
+        public_origin: base.clone(),
+        admin_allowed_origins: vec![base.clone()],
+        issuer_secret_path: secret_path,
+        issuer_public_path: public_path,
+        admin_username: "admin".into(),
+        admin_password_hash: hash,
+        session_ttl: 3600,
+        session_secret: token() + &token(),
+        csrf_key: [7; 32],
+        secure_cookie: false,
+        worker_interval_ms: 10,
+        lease_seconds: 60,
+        body_limit: 1048576,
+        rate_limit_per_minute: 10000,
+    };
+    let app = Application::bootstrap(config.clone()).await.unwrap();
+    let server = Server::new(acceptor);
+    let server_handle = server.handle();
+    let server_task = tokio::spawn(server.serve(issuer_service::http::service(app.clone())));
+    assert_eq!(
+        Client::new()
+            .get(format!("{base}/admin/login"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    assert_eq!(
+        Client::new()
+            .get(format!("{base}/assets/index.js"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    let browser = Client::builder().cookie_store(true).build().unwrap();
+    let admin_url = format!("{base}/api/v1/admin");
+    assert_eq!(
+        browser
+            .get(format!("{admin_url}/settings"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let csrf: Value = browser
+        .get(format!("{admin_url}/csrf"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    // Salvo's CSRF middleware rejects unsafe requests without a valid proof.
+    assert_eq!(
+        browser
+            .post(format!("{admin_url}/sessions"))
+            .header("origin", &base)
+            .json(&json!({"username":"admin","password":password}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let response = browser
+        .post(format!("{admin_url}/sessions"))
+        .header("origin", &base)
+        .header("x-csrf-token", csrf["csrf_token"].as_str().unwrap())
+        .json(&json!({"username":"admin","password":password}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let cookie = response
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"));
+    let login: Value = response.json().await.unwrap();
+    let csrf = login["csrf_token"].as_str().unwrap();
+    assert_eq!(
+        browser
+            .put(format!("{admin_url}/settings"))
+            .header("origin", "https://untrusted.example")
+            .header("x-csrf-token", csrf)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+
+    let mut s: crypto_sso_identity_api::ServiceSettings =
+        Settings::get_by_id(&mut app.store.database(), &1)
+            .await
+            .unwrap()
+            .into();
+    s.registration_enabled = true;
+    s.issuance_enabled = true;
+    s.claim_hints = vec![ClaimHint {
+        key: "role".into(),
+        label: "角色".into(),
+        description: "requires roster verification".into(),
+        default_value: Some("member".into()),
+        example_value: None,
+        include_by_default: true,
+    }];
+    let key = token();
+    let saved = browser
+        .put(format!("{admin_url}/settings"))
+        .header("origin", &base)
+        .header("x-csrf-token", csrf)
+        .header("idempotency-key", &key)
+        .json(&s)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(saved.status(), 200);
+    assert_eq!(
+        app.save_settings("admin", &key, s.clone()).await.unwrap()["revision"],
+        2
+    );
+    assert_eq!(
+        app.save_settings("admin", &token(), s.clone())
+            .await
+            .unwrap_err()
+            .status,
+        409
+    );
+    let restarted = Application::bootstrap(config.clone()).await.unwrap();
+    assert!(
+        restarted
+            .info()
+            .await
+            .unwrap()
+            .settings
+            .registration_enabled
+    );
+
+    let wallet_directory = temporary.path().join("wallet");
+    let engine = Engine::new(wallet_directory.clone(), 5, 1048576).unwrap();
+    engine
+        .command("initialize_wallet", json!({}))
+        .await
+        .unwrap();
+    let info = app.info().await.unwrap();
+    assert!(
+        engine
+            .command(
+                "confirm_center",
+                json!({"url":base,"expected_issuer_id":"0".repeat(64)})
+            )
+            .await
+            .is_err()
+    );
+    let center = engine
+        .command(
+            "confirm_center",
+            json!({"url":base,"expected_issuer_id":info.issuer_id}),
+        )
+        .await
+        .unwrap();
+    let center_id = center["id"].as_str().unwrap();
+    let mut draft = engine
+        .command("create_enrollment_draft", json!({"center_id":center_id}))
+        .await
+        .unwrap();
+    // Custom attributes and explicit empty strings remain unchanged; defaults are advisory.
+    draft["rows"] = json!([["role", "member"], ["name", " Alice "], ["custom.note", ""]]);
+    engine
+        .command("save_enrollment_draft", draft.clone())
+        .await
+        .unwrap();
+    let submitted = engine
+        .command("submit_enrollment", json!({"draft_id":draft["id"]}))
+        .await
+        .unwrap();
+    let id = submitted["id"].as_str().unwrap();
+    assert_eq!(submitted["view"]["status"], "PENDING_REVIEW");
+    assert!(submitted.get("access").is_none() && submitted.get("pending").is_none());
+    assert_eq!(
+        browser
+            .get(format!("{base}/api/v1/enrollments/{id}"))
+            .bearer_auth(token())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    engine.command("lock_wallet", json!({})).await.unwrap();
+    assert!(engine.command("list_credentials", json!({})).await.is_err());
+    drop(engine);
+    let engine = Engine::new(wallet_directory.clone(), 5, 1048576).unwrap();
+    engine.command("unlock_wallet", json!({})).await.unwrap();
+    let e = read(&app, id).await;
+    let approval = decision(&e, "member-1");
+    let key = token();
+    let approved = app
+        .review(id, "admin", &key, "approve", approval.clone())
+        .await
+        .unwrap();
+    assert_eq!(approved["status"], "APPROVED");
+    assert_eq!(
+        app.review(id, "admin", &key, "approve", approval.clone())
+            .await
+            .unwrap(),
+        approved
+    );
+    assert_eq!(
+        app.review(id, "admin", &token(), "approve", approval)
+            .await
+            .unwrap_err()
+            .status,
+        409
+    );
+    let (left, right) = tokio::join!(worker::tick(&app), worker::tick(&restarted));
+    assert_ne!(
+        left.unwrap(),
+        right.unwrap(),
+        "exactly one worker owns the lease"
+    );
+    let issued = read(&app, id).await;
+    assert_eq!(issued.view.status, EnrollmentStatus::Issued);
+    let raw = issued.blind_credential.clone().unwrap();
+    worker::tick(&app).await.unwrap();
+    assert_eq!(
+        read(&app, id).await.blind_credential.as_deref(),
+        Some(raw.as_str())
+    );
+    engine.sync(id).await.unwrap();
+    let credentials = engine.command("list_credentials", json!({})).await.unwrap();
+    assert_eq!(credentials.as_array().unwrap().len(), 1);
+    assert_eq!(credentials[0]["claims"]["name"], " Alice ");
+    assert!(credentials[0].get("holder").is_none());
+    let ciphertext = std::fs::read_to_string(wallet_directory.join("vault.enc")).unwrap();
+    assert!(!ciphertext.contains(" Alice ") && !ciphertext.contains("pending"));
+
+    // SDK parsing must reject duplicate inner fields before an ordinary JSON object can swallow them.
+    let (_, request) =
+        Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
+    let request_json = String::from_utf8(wire::to_json(&request).unwrap()).unwrap();
+    let malformed = request_json.replacen("\"version\":1", "\"version\":1,\"version\":1", 1);
+    let body = format!(
+        "{{\"enrollment_request\":{malformed},\"claim_hints_revision\":null,\"application_note\":null}}"
+    );
+    assert_eq!(
+        browser
+            .post(format!("{base}/api/v1/enrollments"))
+            .bearer_auth(token())
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    let access = token();
+    let (created, empty) = app.submit(submit(&request, None), &access).await.unwrap();
+    assert!(created);
+    assert!(!app.submit(submit(&request, None), &access).await.unwrap().0);
+    let mut changed = submit(&request, None);
+    changed.application_note = Some("changed metadata".into());
+    assert_eq!(app.submit(changed, &access).await.unwrap_err().status, 409);
+    assert!(app.submit(submit(&request, None), &token()).await.is_err());
+
+    // One trusted member cannot receive another credential, even from another process.
+    let e = read(&app, &empty.request_id).await;
+    assert_eq!(
+        restarted
+            .review(
+                &empty.request_id,
+                "admin",
+                &token(),
+                "approve",
+                decision(&e, "member-1")
+            )
+            .await
+            .unwrap_err()
+            .code,
+        "MEMBER_ALREADY_RESERVED"
+    );
+    // Competing approval and cancellation allow exactly one state transition.
+    let approval = decision(&e, "member-2");
+    let approve_key = token();
+    let (approve, cancel) = tokio::join!(
+        app.review(
+            &empty.request_id,
+            "admin",
+            &approve_key,
+            "approve",
+            approval
+        ),
+        restarted.wallet_action(&empty.request_id, &access, "cancel", Some(1))
+    );
+    assert_ne!(approve.is_ok(), cancel.is_ok());
+
+    // Stale signing leases are fenced out and become explicitly retryable.
+    let (_, request) =
+        Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
+    let (_, view) = app
+        .submit(submit(&request, Some(999)), &token())
+        .await
+        .unwrap();
+    let entry = read(&app, &view.request_id).await;
+    app.review(
+        &view.request_id,
+        "admin",
+        &token(),
+        "approve",
+        decision(&entry, "member-3"),
+    )
+    .await
+    .unwrap();
+    let mut db = app.store.database();
+    let mut tx = db.transaction().await.unwrap();
+    let mut e = Enrollment::get_by_request_id(&mut tx, &view.request_id)
+        .await
+        .unwrap();
+    e.view.status = EnrollmentStatus::Signing;
+    let signing_view = e.view.clone();
+    e.update()
+        .view(signing_view)
+        .generation(1)
+        .lease_until(now() - 1)
+        .exec(&mut tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    worker::tick(&app).await.unwrap();
+    assert_eq!(
+        read(&app, &view.request_id).await.view.status,
+        EnrollmentStatus::IssueFailed
+    );
+
+    // Zero and one attribute are valid complete sets, alongside the three-claim wallet path above.
+    for (index, claims) in [Claims::empty(), Claims::new([("name", "")]).unwrap()]
+        .into_iter()
+        .enumerate()
+    {
+        let (pending, request) =
+            Holder::begin_enrollment(issuer.public(), &claims, &mut OsRng).unwrap();
+        let (_, view) = app.submit(submit(&request, None), &token()).await.unwrap();
+        let entry = read(&app, &view.request_id).await;
+        app.review(
+            &view.request_id,
+            "admin",
+            &token(),
+            "approve",
+            decision(&entry, &format!("small-set-{index}")),
+        )
+        .await
+        .unwrap();
+        for _ in 0..5 {
+            worker::tick(&app).await.unwrap();
+            if read(&app, &view.request_id).await.view.status == EnrollmentStatus::Issued {
+                break;
+            }
+        }
+        let response = read(&app, &view.request_id).await.blind_credential.unwrap();
+        let credential = pending
+            .finish(&wire::from_json(response.as_bytes()).unwrap())
+            .unwrap();
+        assert_eq!(credential.claims(), &claims);
+    }
+
+    // A structurally valid request with an invalid knowledge proof never gets a deliverable signature.
+    let (_, mut invalid) =
+        Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
+    invalid.response_secret = "00".repeat(32);
+    let (_, invalid_view) = app.submit(submit(&invalid, None), &token()).await.unwrap();
+    let invalid_entry = read(&app, &invalid_view.request_id).await;
+    app.review(
+        &invalid_view.request_id,
+        "admin",
+        &token(),
+        "approve",
+        decision(&invalid_entry, "invalid-proof-member"),
+    )
+    .await
+    .unwrap();
+    for _ in 0..5 {
+        worker::tick(&app).await.unwrap();
+        if read(&app, &invalid_view.request_id).await.view.status
+            == EnrollmentStatus::InvalidRequest
+        {
+            break;
+        }
+    }
+    let failed = read(&app, &invalid_view.request_id).await;
+    assert_eq!(failed.view.status, EnrollmentStatus::InvalidRequest);
+    assert!(failed.blind_credential.is_none());
+
+    for action in ["request-changes", "reject"] {
+        let (_, request) =
+            Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
+        let (_, view) = app.submit(submit(&request, None), &token()).await.unwrap();
+        let entry = read(&app, &view.request_id).await;
+        app.review(
+            &view.request_id,
+            "admin",
+            &token(),
+            action,
+            decision(&entry, "unused"),
+        )
+        .await
+        .unwrap();
+        let terminal = read(&app, &view.request_id).await;
+        assert_eq!(
+            terminal.view.public_reason.as_deref(),
+            Some("Please verify your email")
+        );
+        assert_eq!(terminal.history.len(), 1);
+        assert!(
+            app.review(
+                &view.request_id,
+                "admin",
+                &token(),
+                "approve",
+                decision(&terminal, "unused")
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    // Two distinct applications compete for the same previously absent member
+    // reservation. Losing the native transaction must leave no partial approval.
+    let (_, request_a) =
+        Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
+    let (_, request_b) =
+        Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
+    let (_, view_a) = app
+        .submit(submit(&request_a, None), &token())
+        .await
+        .unwrap();
+    let (_, view_b) = app
+        .submit(submit(&request_b, None), &token())
+        .await
+        .unwrap();
+    let decision_a = decision(&read(&app, &view_a.request_id).await, "competing-member");
+    let decision_b = decision(&read(&app, &view_b.request_id).await, "competing-member");
+    let key_a = token();
+    let key_b = token();
+    let (result_a, result_b) = tokio::join!(
+        app.review(&view_a.request_id, "admin", &key_a, "approve", decision_a),
+        restarted.review(&view_b.request_id, "admin", &key_b, "approve", decision_b),
+    );
+    assert_ne!(result_a.is_ok(), result_b.is_ok());
+    let (winner, loser, loser_key, error) = match (result_a, result_b) {
+        (Ok(_), Err(error)) => (&view_a, &view_b, &key_b, error),
+        (Err(error), Ok(_)) => (&view_b, &view_a, &key_a, error),
+        _ => unreachable!(),
+    };
+    assert_eq!(error.status, 409);
+    let member = Member::get_by_member_ref(&mut store.database(), &"competing-member".to_owned())
+        .await
+        .unwrap();
+    assert_eq!(member.request_id, winner.request_id);
+    let unchanged = read(&app, &loser.request_id).await;
+    assert_eq!(unchanged.view.status, EnrollmentStatus::PendingReview);
+    assert_eq!(unchanged.view.revision, 1);
+    assert!(unchanged.decision.is_none() && unchanged.history.is_empty());
+    assert!(
+        Idempotency::filter_by_key(loser_key.clone())
+            .first()
+            .exec(&mut store.database())
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // Persisted Salvo sessions survive a store reconnect, then logout revokes them.
+    assert_eq!(
+        browser
+            .get(format!("{admin_url}/session"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        browser
+            .delete(format!("{admin_url}/session"))
+            .header("origin", &base)
+            .header("x-csrf-token", csrf)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        Client::new()
+            .get(format!("{admin_url}/session"))
+            .header("cookie", cookie.split(';').next().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+
+    // Stop the center. Existing credentials must still prove and verify without any center call.
+    server_handle.stop_graceful(None);
+    server_task.await.unwrap();
+    let origin = Origin::parse("http://127.0.0.1:39001").unwrap();
+    let verifier = Arc::new(
+        crypto_sso_verifier::Verifier::new(issuer.public().clone(), origin.clone()).unwrap(),
+    );
+    let app_config=engine.command("save_trusted_app",json!({"id":"","name":"Test application","origin":origin.as_str(),"issuer_id":info.issuer_id})).await.unwrap();
+    let (challenge, binding) = verifier
+        .create_challenge(&ClaimKeys::new(["role"]).unwrap(), now(), &mut OsRng)
+        .unwrap();
+    let task=engine.command("import_login_challenge",json!({"app_id":app_config["id"],"challenge_json":String::from_utf8(wire::to_json(&challenge).unwrap()).unwrap()})).await.unwrap();
+    let plan = engine
+        .command("get_disclosure_plan", json!({"id":task["id"]}))
+        .await
+        .unwrap();
+    assert_eq!(plan["state"], "REVIEW_DISCLOSURE");
+    let proof=engine.command("create_presentation",json!({"id":task["id"],"expected_revision":task["revision"],"credential_id":id,"disclose_keys":["role"]})).await.unwrap();
+    let raw = proof["presentation_json"].as_str().unwrap().as_bytes();
+    let relying = RelyingParty {
+        verifier: verifier.clone(),
+        store: store.clone(),
+        required: ClaimKeys::new(["role"]).unwrap(),
+        policy: BTreeMap::from([("role".into(), "member".into())]),
+        session_ttl: 3600,
+        body_limit: 1048576,
+    };
+    toasty::create!(StoredChallenge {
+        id: challenge.nonce().as_str().to_owned(),
+        raw: String::from_utf8(wire::to_json(&challenge).unwrap()).unwrap(),
+        consumed: false,
+    })
+    .exec(&mut store.database())
+    .await
+    .unwrap();
+    let (first, second) = tokio::join!(
+        relying.verify_and_consume(raw, binding.expose_cookie_value()),
+        relying.verify_and_consume(raw, binding.expose_cookie_value())
+    );
+    assert_ne!(first.is_ok(), second.is_ok());
+    let session = first.or(second).unwrap();
+    assert_eq!(session["session"]["claims"], json!({"role":"member"}));
+    assert!(session["session"]["claims"].get("name").is_none());
+    // Exercise the actual relying-party Salvo handlers with an independent browser session.
+    let rp_acceptor = TcpListener::new("127.0.0.1:0").bind().await;
+    let rp_base = format!("http://{}", rp_acceptor.inner().local_addr().unwrap());
+    let rp_server = Server::new(rp_acceptor);
+    let rp_handle = rp_server.handle();
+    let rp_secret = token() + &token();
+    let rp_task = tokio::spawn(rp_server.serve(crypto_sso_relying_party::service(
+        relying.clone(),
+        rp_secret.as_bytes(),
+        [9; 32],
+        false,
+    )));
+    let rp_browser = Client::builder().cookie_store(true).build().unwrap();
+    assert!(
+        rp_browser
+            .get(&rp_base)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .is_client_error()
+    );
+    let context: Value = rp_browser
+        .get(format!("{rp_base}/api/v1/login/context"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let csrf = context["csrf_token"].as_str().unwrap();
+    let fresh: Value = rp_browser
+        .post(format!("{rp_base}/api/v1/login/challenges"))
+        .header("origin", origin.as_str())
+        .header("x-csrf-token", csrf)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let fresh_task=engine.command("import_login_challenge",json!({"app_id":app_config["id"],"task_id":task["id"],"challenge_json":fresh["challenge_json"]})).await.unwrap();
+    let proof=engine.command("create_presentation",json!({"id":task["id"],"expected_revision":fresh_task["revision"],"credential_id":id,"disclose_keys":["role"]})).await.unwrap();
+    let public_proof = proof["presentation_json"].as_str().unwrap();
+    let login = rp_browser
+        .post(format!("{rp_base}/api/v1/login/proofs"))
+        .header("origin", origin.as_str())
+        .header("x-csrf-token", csrf)
+        .header("content-type", "application/json")
+        .body(public_proof.to_owned())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login.status(), 200);
+    assert_eq!(
+        login.json::<Value>().await.unwrap()["claims"],
+        json!({"role":"member"})
+    );
+    assert_eq!(
+        rp_browser
+            .get(format!("{rp_base}/api/v1/login/session"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        rp_browser
+            .post(format!("{rp_base}/api/v1/login/proofs"))
+            .header("origin", origin.as_str())
+            .header("x-csrf-token", csrf)
+            .body(public_proof.to_owned())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    rp_handle.stop_graceful(None);
+    rp_task.await.unwrap();
+    engine.command("lock_wallet", json!({})).await.unwrap();
+    drop(engine);
+    let engine = Engine::new(wallet_directory, 5, 1048576).unwrap();
+    engine.command("unlock_wallet", json!({})).await.unwrap();
+    assert_eq!(
+        engine
+            .command("list_credentials", json!({}))
+            .await
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        engine
+            .command("get_disclosure_plan", json!({"id":task["id"]}))
+            .await
+            .unwrap()["state"],
+        "NEEDS_CHALLENGE"
+    );
+    engine
+        .command("delete_credential", json!({"id":id}))
+        .await
+        .unwrap();
+    assert_eq!(
+        engine
+            .command("get_enrollment", json!({"id":id}))
+            .await
+            .unwrap()["local_state"],
+        "CREDENTIAL_DELETED"
+    );
+    assert_eq!(
+        engine
+            .command("get_disclosure_plan", json!({"id":task["id"]}))
+            .await
+            .unwrap()["state"],
+        "CREDENTIAL_DELETED"
+    );
+}

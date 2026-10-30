@@ -1,0 +1,9 @@
+[package]
+name = "crypto-sso-identity-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs = { version = "11", features = ["serde-compat", "serde-json-impl"] }

@@ -5,3 +5,29 @@ edition = "2024"
 
 [dependencies]
 crypto-sso-issuer = { version = "0.1.0", path = "../sdk/issuer" }
+crypto-sso-identity-api = { path = "../crates/identity-api" }
+crypto-sso-telemetry = { path = "../crates/telemetry" }
+tracing.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+sha2.workspace = true
+hex.workspace = true
+zeroize.workspace = true
+tokio = { version = "1", features = ["full"] }
+salvo = { version = "1", default-features = false, features = ["server", "server-handle", "http1", "cookie", "test", "affix-state", "session", "csrf", "logging"] }
+salvo-csrf = { version = "1", default-features = false, features = ["session-store", "hmac-cipher"] }
+saysion = "0.2"
+toasty = { version = "0.11", features = ["postgresql", "migration", "serde"] }
+toasty-cli = "0.11"
+toasty-core = "0.11"
+dotenvy = "0.15"
+argon2 = "0.5"
+subtle = "2.6"
+url = "2"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crypto-sso-holder = { path = "../sdk/holder" }
+tempfile.workspace = true

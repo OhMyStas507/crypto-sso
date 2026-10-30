@@ -1,0 +1,20 @@
+# Render through nginx's official image envsubst support, or your deployment system.
+# Copy issuer-service-webui/dist/* into ${FRONTEND_STATIC_ROOT}/admin/.
+server {
+    listen ${FRONTEND_LISTEN_PORT};
+    server_name ${FRONTEND_SERVER_NAME};
+    root ${FRONTEND_STATIC_ROOT};
+
+    location = / {
+        return 302 /admin/overview;
+    }
+    location /admin/ {
+        try_files $uri $uri/ /admin/index.html;
+    }
+    location /api/ {
+        # No URI suffix: preserve the original /api/v1/... path.
+        proxy_pass ${ISSUER_API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

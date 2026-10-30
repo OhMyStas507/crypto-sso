@@ -12,8 +12,8 @@
 
 | 单元 | 运行形式 | 主要依赖 | 对外边界 |
 |---|---|---|---|
-| `issuer-service` | Salvo HTTP 服务，进程内运行签发等后台任务 | issuer SDK、业务契约、Toasty、PostgreSQL | 公开申请 API、管理员 API、管理页面静态资源 |
-| `issuer-service-webui` | Solid SPA | 生成的业务契约、Solid Router、Solid Query | 通过同源 HTTP 管理中心 |
+| `issuer-service` | Salvo HTTP 服务，进程内运行签发等后台任务 | issuer SDK、业务契约、Toasty、PostgreSQL | 公开申请 API、管理员 API（不提供前端资源） |
+| `issuer-service-webui` | Solid SPA | 生成的业务契约、Solid Router、Solid Query | 独立部署；开发由 Vite 反向代理 API，生产由前端网关转发 API |
 | `wallet/src-tauri` | 本地 Tauri Rust 进程 | holder SDK、业务契约、HTTP 客户端、系统密钥保护 | 受限 Tauri commands 与状态事件 |
 | `wallet/src` | Solid SPA，运行于 Tauri WebView | 生成的 IPC 类型、部分业务契约、Solid Router | 通过 IPC 使用钱包，展示用户可读信息 |
 | `crates/identity-api` | 被中心和钱包引用的 Rust 库 | Serde 及原始 JSON 包装 | 定义 HTTP 业务 DTO、错误码和分页结构 |
@@ -174,7 +174,6 @@ issuer-service/
 │   │   ├── mod.rs
 │   │   ├── router.rs                  # Salvo 路由注册
 │   │   ├── errors.rs                  # 业务错误到 HTTP 错误的映射
-│   │   ├── static_files.rs            # /admin 静态资源及 SPA fallback
 │   │   ├── middleware/
 │   │   │   ├── mod.rs
 │   │   │   ├── admin_session.rs       # 会话鉴权
@@ -245,13 +244,13 @@ issuer-service/
 |---|---|---|
 | `http` | 路由、权限上下文、严格外层解析、状态码与 Cookie | 调用 `application`；不直接写数据库 |
 | `application` | 编排完整用例、核对哈希、选择事务操作、构造结果 | 使用领域规则及有限的能力接口 |
-| `domain` | 状态迁移、审批条件、建议规则及签发约束 | 保持普通 Rust 类型，可独立测试 |
-| `postgres` | Toasty 模型、读模型、唯一约束与事务实现 | 将领域动作原子写入 PostgreSQL |
+| `domain` | 状态迁移、审批条件、设置校验及审计事件构造 | 状态规则使用普通函数，审计通过调用方传入的 Executor 创建 |
+| `models / store` | 类型化 Toasty 模型、统一注册、连接与启动迁移 | CRUD 由用例直接使用框架生成的 API |
 | `sdk/issuer` | 保持固定 issuer、严格 SDK 解析及盲签发 | 使用 issuer crate；不依赖 holder/verifier |
 | `workers` | 调度、退避、租约恢复、服务停止 | 调用与 HTTP 共用的用例，不重复写一套签发逻辑 |
 | `bootstrap` | 配置并组装上述依赖 | 在 SDK 使用和工作线程启动前设置 ClaimsLimits |
 
-`ports.rs` 表达“批准并保留成员名额”“提交签发结果”等完整原子能力，不为每张表创建一个通用 CRUD trait。数据库事务由一个持久化操作完整拥有，所有关联写入使用同一事务连接，避免事务中误用全局连接提交部分数据。
+当前实现不为每张表建立通用 CRUD trait 或通用 JSON 存取函数；由 `application.rs`、`worker.rs` 和会话/应用适配器直接拥有 Toasty 原生事务；`models.rs` 定义类型化 ORM 模型，`store.rs` 仅提供模型注册、数据库句柄与启动迁移。所有关联读写传入同一个 `&mut Transaction`，不能在事务中重新取得全局数据库句柄执行关联操作。
 
 ## 5. PostgreSQL 模型与事务归属
 
@@ -275,9 +274,29 @@ issuer-service/
 
 申请中的 `member_ref` 在核验前可以为空。成员名额在批准时保留，直到未签发申请被合法终止才可释放；`ISSUED` 的名额长期保留。
 
-原始 SDK 消息、规范 Claims 快照及已签发响应优先以经过严格校验的 JSON 文本保存，以便原样领取和重验；用于检索的 issuer、ID、状态、时间、修订等单独成列。不要从分散的属性行或最新建议配置重建已经获批的请求。
+原始 SDK 消息、规范 Claims 快照及已签发响应优先以经过严格校验的 JSON 文本保存，以便原样领取和重验；当前实现把主键、成员关系、设置修订和开关、租约与时间等定义为类型化列；申请公开状态快照使用 `Json<EnrollmentView>`，列表筛选仍在内存完成。不要从分散的属性行或最新建议配置重建已经获批的请求。
 
 签发列表是业务读模型，以获准签发任务为基准关联成功记录，使等待、失败及已签发都能在同一台账页面展示；不能只读取 `issuances` 成功表而遗漏待处理任务。成员详情、概览和审计同样返回有限读模型，不直接序列化 ORM 关联对象。
+
+当前实现使用 11 个独立模型/表：`IssuerMetadata / issuer_metadata`、`Settings / service_settings`、`ClaimHintRevision / claim_hint_revisions`、`Enrollment / enrollments`、`Member / members`、`Idempotency / operation_dedup`、`AuditRecord / audit_events`、`WebSession / web_sessions`、`RevokedSession / revoked_sessions`、`StoredChallenge / login_challenges`、`ApplicationSession / application_sessions`。上表描述的审批、租约和签发结果聚合在 `Enrollment` 的明确字段中，管理员凭据仍从环境变量提供。
+
+Claims、建议、申请公开状态和审批历史等结构化快照使用 Toasty `Json<T>` 映射到 JSONB；主键、成员关系、开关、修订、租约、会话 namespace 等为独立类型化字段。成员的 `enrollment` 声明为原生 `#[belongs_to]` 关系。用例按下列方式直接调用 ORM，不经过自定义 CRUD 函数：
+
+```rust
+let enrollment = Enrollment::get_by_request_id(&mut tx, &request_id).await?;
+let member = toasty::create!(Member {
+    member_ref: member_ref.to_owned(),
+    enrollment: &enrollment,
+    evidence_source: source.to_owned(),
+    verification_note: note.to_owned(),
+    verified_at: now(),
+    issued: false,
+}).exec(&mut tx).await?;
+
+let mut member = Member::get_by_member_ref(&mut tx, &member.member_ref).await?;
+let enrollment = member.enrollment().exec(&mut tx).await?;
+member.update().issued(true).exec(&mut tx).await?;
+```
 
 ### 5.2 原子操作划分
 
@@ -290,15 +309,33 @@ issuer-service/
 | 提交签发结果 | 重查代次及开关、保存唯一盲签响应、更新申请及任务状态、占用永久签发名额、写审计 |
 | 保存设置 | 核对设置修订、更新完整设置、必要时追加建议修订、写审计及幂等结果 |
 
-昂贵的 `issue_blind` 在事务锁外执行。签发结果提交时重新核对执行代次和状态；旧任务即使算出签名也不能写回。关闭签发和签发提交使用一致的设置记录检查及加锁顺序，保证开关的生效顺序可确定。
+按照 [Toasty 0.11 Transactions](https://tokio-rs.github.io/toasty/0.11.0/guide/transactions.html)，写用例使用 `Db::transaction_builder().isolation(IsolationLevel::Serializable).begin()`，把所有查询及 ORM 写入交给同一个 `&mut tx`，最后调用 `tx.commit().await?`。隔离级别枚举来自 `toasty_core::driver::operation::IsolationLevel`，由 `store` 模块重导出。事务遇到 `?` 或提前返回而未提交时，由 Toasty 的 Drop 自动回滚；不自行发送事务 SQL，不实现内存快照、变更比较、补偿回滚或全局锁行。
+
+数据库通过 Serializable 隔离检查并发读写，保证状态/修订检查和成员名额不会发生丢失更新或写偏差。序列化失败整体回滚，并映射为 `409 REVISION_CONFLICT`；调用者刷新后可沿用幂等键重试完整用例。worker 领取租约发生冲突时跳过本轮，下一次 tick 再尝试；签发结果未提交则仍按租约恢复。业务层不在已失败的事务内重试单条 SQL。
+
+管理复合查询使用原生只读 RepeatableRead 事务；单条独立查询及写入直接使用 Db Executor。CRUD 直接使用各模型的 `create!`、`get_by_*`、查询构造器、实例/查询更新器和删除器。详情按主键或关联读取，会话按 namespace 索引筛选；列表排序、业务搜索和分页当前仍在内存完成。
+
+昂贵的 `issue_blind` 和应用证明验真均在数据库事务外执行。租约必须先提交才能签名；结果提交时重新核对执行代次、状态、租约和签发开关，旧任务即使算出签名也不能写回。签发结果事务还使用 `current_settings.update().issuance_enabled(enabled).exec(&mut tx)` 更新已检查的同一设置行；若关闭签发已提交，旧快照的写入会触发序列化失败，确保结果无法在关闭后继续提交。该行只参与设置保存和签发结果提交，不再作为全库事务锁。应用端在验真后开启新的原生写事务，重新检查完整挑战、到期时间和消费状态，然后原子消费挑战并创建应用会话。Salvo SessionStore 也以原生写事务保护撤销检查、会话保存与删除。
 
 ### 5.3 Toasty 与迁移
 
-按 [Toasty 官方仓库](https://github.com/tokio-rs/toasty) 当前文档，模型以 Rust `toasty::Model` 定义，放入 `models/`；迁移、映射快照与历史集中在服务自己的 `toasty/` 下。实现时锁定 Toasty 与 PostgreSQL driver 的匹配版本，并以所选版本的工具产物为准。
+按 [Toasty 0.11 Schema Management](https://tokio-rs.github.io/toasty/0.11.0/guide/schema-management.html)，模型以 Rust `toasty::Model` 定义并统一注册；迁移、映射快照与历史集中在服务自己的 `toasty/` 下。使用官方 `ToastyCli` 生成模型差异迁移，通过 `toasty::embed_migrations!()` 将迁移集编译进程序。根 `Toasty.toml` 配置产物目录，`issuer-db` 提供官方迁移命令入口。
 
-数据库扩展约束和事务操作都封装在同一个 PostgreSQL 适配层。对 ORM 之外确需使用的 PostgreSQL DDL，放入受版本管理的迁移；用例及 handler 不散落 SQL，也不再并行引入另一套 ORM。
+模型统一定义于 `models.rs` 并由 `store.rs` 注册；用例直接调用 Toasty 的 CRUD 与事务 API，结构化 JSONB 字段的编解码交给原生 `Json<T>`。对 ORM 之外确需使用的 PostgreSQL DDL，放入受版本管理的迁移；用例及 handler 不散落 SQL，也不再并行引入另一套 ORM。
 
-第一个数据库里程碑要在真实 PostgreSQL 上验证复合唯一性、条件更新、完整回滚及任务竞争，再展开审批页面。生产启动检查迁移版本，正式迁移由部署步骤执行；不在每次启动时重建表。
+中心和示例应用在每次启动时调用 Toasty `MigrationSet::apply`，自动应用各自数据库中尚未执行的迁移；框架维护 `__toasty_migrations` 并跳过已应用版本。迁移完成后才启动 HTTP 服务和后台任务，失败则退出。模型变更后生成、审阅并提交迁移产物，再重新构建程序；不在运行时手写建表或重新实现迁移历史管理。迁移验收覆盖新库、旧原型及已有旧迁移历史的数据库，验证所有类型化模型的数据搬迁、原生关联、旧锁表移除和重复启动。`0001_remove_transaction_guard.sql` 由官方 CLI 生成，不修改已应用的初始迁移；升级前停止旧版服务和 worker，避免不同事务实现混合运行。事务验收使用真实 PostgreSQL 验证提交可见性、自动/显式回滚、嵌套保存点及并发写偏差保护，并继续验证业务事务及任务竞争。
+
+`0002_typed_business_models.sql` 的 DDL 与快照由官方 CLI 生成，迁移内补充一次性数据转换语句，旧 `identity_records` 的业务对象转入独立模型表，原始行完整保留为 `identity_records_legacy` 迁移归档。归档不注册为运行时模型，应用不再通过前缀或通用 JSON CRUD 访问业务数据。数据转换仍随 Toasty 迁移原子执行，失败不会留下部分搬迁结果；不在应用启动函数中自行遍历旧记录或维护迁移版本。
+
+### 5.4 日志
+
+中心、独立应用、钱包和迁移工具使用共享 `crypto-sso-telemetry` 初始化 `tracing` subscriber。日志过滤仅从进程环境的 `RUST_LOG` 读取，开发时可由 `.env` 传入；启动前加载环境文件，不在库代码中重复安装全局 subscriber。按业务语义分别使用 `error`、`warn`、`info`、`debug` 和 `trace`，成功提交的日志放在 Toasty `commit()` 之后。
+
+事务冲突作为预期竞争记录在 `debug`，worker 租约竞争留待下一轮；数据库操作失败、任务失败和本地加密写入失败使用 `error`。HTTP 错误只记录公开状态码、错误码与响应中的 `trace_id`。span 使用 `skip_all`，不捕获密钥、连接串、申请/证明/Claims、Cookie 或钱包数据；默认配置提高应用 target 以及 `salvo_extra::logging` 的日志级别，其余第三方 SQL/HTTP 库保持 `warn`。
+
+注册中心和独立应用通过 `http::service` 构建 Salvo `Service`，在路由层之外挂载框架原生 `logging::Logger`。它以 `info` 记录每次访问的方法、路径、状态码、耗时、协议及远端地址，并将请求 span 传播到业务日志。Service 中间件保证权限/来源/CSRF/限流早期返回及 404/405 都会被记录；不自行实现路径分发或访问日志计时器。默认 `RUST_LOG` 显式包含 `salvo_extra::logging=info`，应用 target 为 `info`。
+
+访问日志仅使用 URI 的 path，不包含 query、Authorization、Cookie 或请求体。`issuer-service/tests/access_logs.rs` 通过实际 Service 请求验证正常响应、早期拒绝、路由缺失、方法不匹配和服务错误，检查每条访问记录的 INFO 等级、字段及请求敏感数据隔离；端到端测试使用与生产相同的 Service 入口。
 
 ## 6. 中心 Solid 前端目录
 
@@ -700,7 +737,7 @@ examples/relying-party/
 │   ├── main.rs
 │   ├── lib.rs
 │   ├── config.rs                      # 固定 issuer 与实际浏览器 origin
-│   ├── http.rs                        # challenge、proof、会话读写和静态页
+│   ├── http.rs                        # challenge、proof、会话读写；不提供前端资源
 │   ├── login.rs                       # verifier 调用、属性值策略及事务编排
 │   └── persistence.rs                 # Toasty 挑战与应用会话模型
 ├── toasty/
@@ -728,7 +765,7 @@ examples/relying-party/
 |---|---|---|
 | PostgreSQL | `compose.dev.yaml` 提供实例；中心与示例各用独立数据库 | 外部持久化服务与受保护备份 |
 | 中心后端 | Salvo loopback 端口，如 8080 | HTTPS 入口后的 Salvo 服务 |
-| 中心管理前端 | Vite 如 5173，代理 `/api` 到中心 | 构建后由中心 `/admin/` 提供，配置匹配的 Vite base |
+| 中心管理前端 | Vite 如 5173，代理 `/api` 到中心 | 构建后由独立前端托管服务提供 `/admin/`；网关代理 API，配置匹配的 Vite base |
 | 钱包 | 沿用现有 Tauri 开发端口 1420 | Tauri 桌面包，Solid 资源随包分发 |
 | 示例应用 | 独立后端如 8081、Vite 如 5174 | 独立应用 origin，与中心分开 |
 
@@ -741,7 +778,7 @@ examples/relying-party/
 | 钱包中心信任、受信应用、偏好与本地记录 | 加密钱包文档 | 钱包本地页面操作 |
 | 管理 SPA 和钱包静态资源 | 各自构建产物 | 不作为业务数据编辑 |
 
-管理 API 与静态资源同源部署，开发通过 Vite 代理保持 Cookie 语义。Tauri 只加载自身界面，能力配置和 CSP 按实际 IPC/静态资源收紧；中心网络请求由 Rust 层执行。
+前后端分离部署；Rust 后端仅提供 API。开发通过 Vite 反向代理，生产由独立前端网关转发 API，保持浏览器同源 Cookie 语义。Tauri 只加载自身界面，能力配置和 CSP 按实际 IPC/静态资源收紧；中心网络请求由 Rust 层执行。
 
 ## 15. 模块验收与测试放置
 

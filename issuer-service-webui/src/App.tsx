@@ -1,106 +1,133 @@
-import { createSignal } from 'solid-js'
-import heroImg from './assets/hero.png'
-import solidLogo from './assets/solid.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { For, Show, type ParentProps } from "solid-js";
+import { Router, Route, A, Navigate, useLocation } from "@solidjs/router";
+import {
+  QueryClient,
+  QueryClientProvider,
+  createQuery,
+} from "@tanstack/solid-query";
+import { api, type Session } from "./api";
+import { Icon, ErrorNotice } from "./ui";
+import {
+  Login,
+  OverviewPage,
+  EnrollmentList,
+  ReviewPage,
+  MembersPage,
+  MemberPage,
+  AuditPage,
+  SettingsPage,
+  IssuerPage,
+  NotFound,
+} from "./pages";
+import "./design.css";
+import "bootstrap-icons/font/bootstrap-icons.css";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = createSignal(0)
-
+const client = new QueryClient({
+  defaultOptions: { queries: { retry: false, staleTime: 5000 } },
+});
+const nav = [
+  ["/overview", "grid-1x2", "概览"],
+  ["/enrollments", "inbox", "注册申请"],
+  ["/members", "people", "成员"],
+  ["/issuances", "file-earmark-check", "签发台账"],
+  ["/settings/service", "sliders2", "服务设置"],
+  ["/settings/claims", "list-ul", "Claims 默认建议"],
+  ["/settings/issuer", "fingerprint", "签发身份"],
+  ["/audit", "clock-history", "审计记录"],
+];
+function Layout(p: ParentProps) {
+  const session = createQuery(() => ({
+    queryKey: ["admin-session"],
+    queryFn: () => api<Session>("session"),
+  }));
+  const location = useLocation();
+  const title = () =>
+    nav.find(([path]) => location.pathname.startsWith(`/admin${path}`))?.[2] ??
+    "身份中心";
+  const logout = async () => {
+    await api("session", "DELETE");
+    client.clear();
+    window.location.assign("/admin/login");
+  };
   return (
-    <>
-      <section id="center">
-        <div class="hero">
-          <img src={heroImg} class="base" width="170" height="179" alt="" />
-          <img src={solidLogo} class="framework" alt="Solid logo" />
-          <img src={viteLogo} class="vite" alt="Vite logo" />
+    <Show
+      when={session.data}
+      fallback={
+        <div class="loading">
+          <ErrorNotice error={session.error} />
+          <Show when={!session.error}>正在验证管理员会话…</Show>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          class="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count()}
-        </button>
-      </section>
-
-      <div class="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg class="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img class="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://solidjs.com/" target="_blank">
-                <img class="button-icon" src={solidLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg class="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg class="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg class="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg class="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg class="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div class="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      }
+    >
+      <div class="app">
+        <aside class="sidebar">
+          <div class="brand">
+            <span class="brandmark">
+              <Icon name="intersect" />
+            </span>
+            身份中心
+          </div>
+          <For each={nav}>
+            {([href, icon, label], i) => (
+              <>
+                <Show when={i() === 4}>
+                  <div class="nav-caption">管理</div>
+                </Show>
+                <A href={href} class="nav-item" activeClass="selected">
+                  <Icon name={icon} />
+                  {label}
+                </A>
+              </>
+            )}
+          </For>
+          <div class="nav-spacer" />
+          <div class="sidebar-bottom">
+            <span class="avatar">AD</span>
+            <div>
+              管理员<div class="tiny muted">{session.data?.username}</div>
+            </div>
+            <button class="icon-button" aria-label="退出登录" onClick={logout}>
+              <Icon name="box-arrow-right" />
+            </button>
+          </div>
+        </aside>
+        <main class="workspace">
+          <header class="topbar">
+            <Icon name="buildings" />
+            <span class="crumb">身份中心</span>
+            <span class="slash">/</span>
+            {title()}
+            <div class="top-right">
+              {new Date().toLocaleDateString("zh-CN")}
+            </div>
+          </header>
+          <div class="content">{p.children}</div>
+        </main>
+      </div>
+    </Show>
+  );
 }
-
-export default App
+export default function App() {
+  return (
+    <QueryClientProvider client={client}>
+      <Router base="/admin">
+        <Route path="/login" component={Login} />
+        <Route component={Layout}>
+          <Route path="/" component={() => <Navigate href="/overview" />} />
+          <Route path="/overview" component={OverviewPage} />
+          <Route path="/enrollments" component={EnrollmentList} />
+          <Route path="/enrollments/:requestId" component={ReviewPage} />
+          <Route path="/members" component={MembersPage} />
+          <Route path="/members/:memberRef" component={MemberPage} />
+          <Route path="/issuances" component={EnrollmentList} />
+          <Route path="/settings/service" component={SettingsPage} />
+          <Route path="/settings/claims" component={SettingsPage} />
+          <Route path="/settings/issuer" component={IssuerPage} />
+          <Route path="/audit" component={AuditPage} />
+          <Route path="*" component={NotFound} />
+        </Route>
+      </Router>
+    </QueryClientProvider>
+  );
+}

@@ -1,32 +1,24 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import solid from "vite-plugin-solid";
-// @ts-expect-error type error without @types/node package
+// @ts-expect-error Node types are provided by Vite's build environment.
 import process from "node:process";
-const host = process.env.TAURI_DEV_HOST;
-
-// https://vite.dev/config/
-export default defineConfig(() => ({
-  plugins: [solid()],
-
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
-  clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
-  server: {
-    port: 1420,
-    strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+export default defineConfig(({ mode, command }) => {
+  const env = loadEnv(mode, "..", "");
+  if (command === "serve") {
+    for (const key of ["WALLET_DEV_HOST", "WALLET_DEV_PORT"]) {
+      if (!env[key]) throw new Error(`Missing environment variable ${key}`);
+    }
+  }
+  const host = process.env.TAURI_DEV_HOST || env.WALLET_DEV_HOST;
+  return {
+    plugins: [solid()],
+    envDir: "..",
+    clearScreen: false,
+    server: {
+      host,
+      port: Number(env.WALLET_DEV_PORT),
+      strictPort: true,
+      watch: { ignored: ["**/src-tauri/**"] },
     },
-  },
-}));
+  };
+});

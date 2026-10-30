@@ -1,0 +1,29 @@
+[package]
+name = "crypto-sso-relying-party"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crypto-sso-verifier = { path = "../../sdk/verifier" }
+crypto-sso-identity-api = { path = "../../crates/identity-api" }
+issuer-service = { path = "../../issuer-service" }
+crypto-sso-telemetry = { path = "../../crates/telemetry" }
+tracing.workspace = true
+salvo = { version = "1", default-features = false, features = ["server", "server-handle", "http1", "cookie", "session", "affix-state", "logging"] }
+salvo-csrf = { version = "1", default-features = false, features = ["session-store", "hmac-cipher"] }
+tokio = { version = "1", features = ["full"] }
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+anyhow.workspace = true
+dotenvy = "0.15"
+toasty = { version = "0.11", features = ["postgresql"] }
+hex.workspace = true
+
+[dev-dependencies]
+wallet = { path = "../../wallet/src-tauri" }
+crypto-sso-issuer = { path = "../../sdk/issuer" }
+crypto-sso-holder = { path = "../../sdk/holder" }
+tempfile.workspace = true
+argon2 = "0.5"
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls"] }

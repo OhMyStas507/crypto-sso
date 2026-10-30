@@ -1,28 +1,51 @@
 name: crypto-sso-dev
 
+# Development infrastructure is configured here, without .env interpolation.
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-crypto_sso}
-      POSTGRES_USER: ${POSTGRES_USER:-crypto_sso}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crypto_sso_dev}
+      POSTGRES_DB: crypto_sso
+      POSTGRES_USER: crypto_sso
+      POSTGRES_PASSWORD: crypto_sso_dev
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      test: ["CMD", "pg_isready", "-U", "crypto_sso", "-d", "crypto_sso"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 10s
 
+  # Explicitly run this profile after startup to also initialize existing volumes.
+  # Database names and connection settings belong to Compose, not the app's .env.
+  postgres-init:
+    image: postgres:17-alpine
+    profiles: ["init"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: crypto_sso
+      PGPASSWORD: crypto_sso_dev
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        psql --dbname=postgres --set=ON_ERROR_STOP=1 <<'SQL'
+        SELECT format('CREATE DATABASE %I', name)
+        FROM (VALUES ('crypto_sso_demo'), ('crypto_sso_test')) AS databases(name)
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = databases.name)
+        \gexec
+        SQL
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:

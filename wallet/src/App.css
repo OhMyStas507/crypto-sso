@@ -1,116 +1,85 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.solid:hover {
-  filter: drop-shadow(0 0 2em #2f5d90);
-}
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
+@import "./interactive.css";
+.nav-button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
 }
-
-button:hover {
-  border-color: #396cd8;
+.wallet .content {
+  overflow: auto;
 }
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+.editor-row input {
+  width: 100%;
 }
-
-input,
-button {
-  outline: none;
+.editor-row .below {
+  margin-top: 5px;
 }
-
-#greet-input {
-  margin-right: 5px;
+.wallet .codebox {
+  max-height: 280px;
+  overflow: auto;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
+.wallet .auth {
+  position: fixed;
+  inset: 0;
+}
+.auth-brand .bi {
+  font-size: 20px;
+}
+.credentials-list .list-row {
+  gap: 20px;
+}
+.claim-table {
+  margin-bottom: 20px;
+}
+.select-line {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0;
+}
+.select-line input {
+  accent-color: var(--accent);
+}
+.origin {
+  font-family: Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.login-layout .page-head {
+  margin-bottom: 25px;
+}
+.view-error {
+  margin-top: 16px;
+}
+.hint-diff {
+  max-height: 250px;
+  overflow: auto;
+}
+.row-summary {
+  line-height: 1.8;
+}
+.credential-row {
+  display: block;
+}
+.auth-main h1 {
+  font-size: 24px;
+}
+.auth-main p {
+  line-height: 1.9;
+  color: var(--secondary);
+}
+.disclosure-row label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: 1;
+}
+.disclosure-row .claim-value {
+  overflow-wrap: anywhere;
+  max-width: 300px;
+}
+.login-summary .mono {
+  font-size: 10px;
 }

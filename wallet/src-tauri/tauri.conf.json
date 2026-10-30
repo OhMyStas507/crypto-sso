@@ -1,24 +1,25 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "wallet",
+  "productName": "Crypto SSO Wallet",
   "version": "0.1.0",
   "identifier": "onion.stasNJT.wallet",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "wallet",
-        "width": 800,
-        "height": 600
+        "title": "身份钱包",
+        "width": 1280,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 700
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:"
     }
   },
   "bundle": {
