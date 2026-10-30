@@ -17,3 +17,5 @@ utils/ 命令行工具（如生成 issuer 私钥，见 [使用说明](utils/READ
 wallet/ 用户本地钱包
 
 SDK 已按 core、issuer、holder、verifier 四个 crate 划分，支持带属性的 BBS+ 盲签发与选择披露。使用方式和检查命令见 [SDK README](sdk/README.md)，测试文档全部 89 个编号的覆盖入口见 [测试覆盖清单](sdk/TEST-COVERAGE.md)。
+
+身份验证中心与钱包的后续业务设计见 [业务流程文档](docs/identity-center-wallet-business-flow.md)，包含服务设置、Claims 默认建议 API、钱包注册、人工审批与签发、凭证保存及应用登录续接；该文档描述待实现功能。
