@@ -24,6 +24,8 @@
 
 业务流程以本文为准；密码学类型和编码以 [SDK API](sdk-api.md)、[协议补充](../sdk/PROTOCOL.md) 为准。业务 HTTP API 的 `/api/v1` 与密码学协议 v1 分别版本化。
 
+后端模块、Solid 前端、钱包 IPC、页面路由及目标目录详见 [项目结构与模块设计](identity-center-wallet-project-structure.md)。
+
 ### 1.1 首期明确采用的规则
 
 1. 一个中心部署绑定一个签发身份 `IssuerPublic`；钱包数据结构按 issuer 隔离，允许连接不同中心。
@@ -461,6 +463,7 @@ SDK `request_hash` 不覆盖业务元数据。中心另行保存规范化业务�
 | `POST /api/v1/admin/sessions` | 账号密码登录，建立服务端管理会话 |
 | `GET /api/v1/admin/session` | 查询当前管理员身份与会话有效状态 |
 | `DELETE /api/v1/admin/session` | 退出并使会话失效 |
+| `GET /api/v1/admin/overview` | 查询服务开关、密钥状态、待审/签发失败数量及近期处理摘要 |
 | `GET /api/v1/admin/settings` | 返回可编辑服务设置、Claims 建议、当前修订及只读状态 |
 | `PUT /api/v1/admin/settings` | 带期望修订保存一份完整设置；事务成功后生效 |
 | `GET /api/v1/admin/enrollments` | 按状态、时间、请求 ID 查询，游标分页 |
@@ -469,7 +472,9 @@ SDK `request_hash` 不覆盖业务元数据。中心另行保存规范化业务�
 | `POST /api/v1/admin/enrollments/{request_id}/request-changes` | 退回修改，保存公开理由与修改建议 |
 | `POST /api/v1/admin/enrollments/{request_id}/reject` | 拒绝待审，或依 7.3 终止尚未签发的申请 |
 | `POST /api/v1/admin/enrollments/{request_id}/retry-issuance` | 仅对 `ISSUE_FAILED` 重试同一已批准请求 |
-| `GET /api/v1/admin/issuances` | 查询签发台账，不导出用户钱包秘密 |
+| `GET /api/v1/admin/members` | 查询已核验成员，供只读成员页面及审批成员选择器使用 |
+| `GET /api/v1/admin/members/{member_ref}` | 查询成员核验摘要、签发名额及关联申请；首期只读 |
+| `GET /api/v1/admin/issuances` | 查询获准签发任务及已签发台账，覆盖等待、失败和成功，不导出用户钱包秘密 |
 | `GET /api/v1/admin/audit-events` | 分页查询设置变更、审批及签发操作记录 |
 
 审批和设置写操作除期望修订外携带业务幂等键。同一键与同一内容重试返回原操作结果；同一键对应不同内容返回冲突。网络重试不能追加第二条批准记录或启动第二个签发任务。
@@ -549,6 +554,7 @@ SDK `request_hash` 不覆盖业务元数据。中心另行保存规范化业务�
 | 服务设置 | 第 5 节全部设置及钱包表单预览 |
 | 待审列表 | 分页、状态过滤、打开详情；首期逐项审批，不提供绕过核验的批量通过 |
 | 申请详情 | 完整 Claims、建议差异、申请说明、成员核验资料、审批操作及处理历史 |
+| 成员查询与详情 | 只读检索已核验成员、签发名额及关联申请；新成员在批准事务中建立 |
 | 签发记录 | 成员、请求、审批人、签发状态与时间、失败原因及合法重试入口 |
 | 审计记录 | 谁在何时修改了设置、作出了审批或重试了签发；敏感值受权限控制 |
 
