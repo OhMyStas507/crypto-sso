@@ -1,0 +1,542 @@
+[
+  {
+    "id": "a01-login",
+    "product": "admin",
+    "title": "管理员登录",
+    "route": "/admin/login",
+    "state": "默认",
+    "file": "png/admin/a01-login.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a02-overview",
+    "product": "admin",
+    "title": "概览",
+    "route": "/admin/overview",
+    "state": "默认",
+    "file": "png/admin/a02-overview.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a03-enrollments",
+    "product": "admin",
+    "title": "注册申请",
+    "route": "/admin/enrollments",
+    "state": "默认",
+    "file": "png/admin/a03-enrollments.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a04-review",
+    "product": "admin",
+    "title": "审批工作区",
+    "route": "/admin/enrollments/:requestId",
+    "state": "默认",
+    "file": "png/admin/a04-review.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a05-members",
+    "product": "admin",
+    "title": "成员列表",
+    "route": "/admin/members",
+    "state": "默认",
+    "file": "png/admin/a05-members.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a06-member-detail",
+    "product": "admin",
+    "title": "成员详情",
+    "route": "/admin/members/:memberRef",
+    "state": "默认",
+    "file": "png/admin/a06-member-detail.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a07-issuances",
+    "product": "admin",
+    "title": "签发台账",
+    "route": "/admin/issuances",
+    "state": "默认",
+    "file": "png/admin/a07-issuances.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a08-service-settings",
+    "product": "admin",
+    "title": "服务设置",
+    "route": "/admin/settings/service",
+    "state": "默认",
+    "file": "png/admin/a08-service-settings.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a09-claim-hints",
+    "product": "admin",
+    "title": "Claims 默认建议",
+    "route": "/admin/settings/claims",
+    "state": "默认",
+    "file": "png/admin/a09-claim-hints.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a10-issuer-info",
+    "product": "admin",
+    "title": "签发身份",
+    "route": "/admin/settings/issuer",
+    "state": "默认",
+    "file": "png/admin/a10-issuer-info.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a11-audit",
+    "product": "admin",
+    "title": "审计记录",
+    "route": "/admin/audit",
+    "state": "默认",
+    "file": "png/admin/a11-audit.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a12-not-found",
+    "product": "admin",
+    "title": "页面不存在",
+    "route": "/admin/*",
+    "state": "默认",
+    "file": "png/admin/a12-not-found.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a13-approve-confirm",
+    "product": "admin",
+    "title": "批准确认",
+    "route": "/admin/enrollments/:requestId",
+    "state": "批准确认",
+    "file": "png/admin/a13-approve-confirm.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a14-return-dialog",
+    "product": "admin",
+    "title": "退回修改",
+    "route": "/admin/enrollments/:requestId",
+    "state": "退回修改确认",
+    "file": "png/admin/a14-return-dialog.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a15-reject-dialog",
+    "product": "admin",
+    "title": "拒绝申请",
+    "route": "/admin/enrollments/:requestId",
+    "state": "拒绝确认",
+    "file": "png/admin/a15-reject-dialog.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a16-issue-failed",
+    "product": "admin",
+    "title": "签发失败与重试",
+    "route": "/admin/enrollments/:requestId",
+    "state": "ISSUE_FAILED",
+    "file": "png/admin/a16-issue-failed.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a17-settings-conflict",
+    "product": "admin",
+    "title": "设置修订冲突",
+    "route": "/admin/settings/service",
+    "state": "409 冲突",
+    "file": "png/admin/a17-settings-conflict.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a18-login-error",
+    "product": "admin",
+    "title": "管理员登录错误",
+    "route": "/admin/login",
+    "state": "认证失败",
+    "file": "png/admin/a18-login-error.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a19-hints-preview",
+    "product": "admin",
+    "title": "钱包建议表单预览",
+    "route": "/admin/settings/claims",
+    "state": "建议表单预览",
+    "file": "png/admin/a19-hints-preview.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "w01-welcome",
+    "product": "wallet",
+    "title": "初始化钱包",
+    "route": "/welcome",
+    "state": "默认",
+    "file": "png/wallet/w01-welcome.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w02-unlock",
+    "product": "wallet",
+    "title": "解锁钱包",
+    "route": "/unlock",
+    "state": "默认",
+    "file": "png/wallet/w02-unlock.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w03-home",
+    "product": "wallet",
+    "title": "首页",
+    "route": "/",
+    "state": "默认",
+    "file": "png/wallet/w03-home.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w04-centers",
+    "product": "wallet",
+    "title": "身份中心列表",
+    "route": "/centers",
+    "state": "默认",
+    "file": "png/wallet/w04-centers.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w05-add-center",
+    "product": "wallet",
+    "title": "添加中心",
+    "route": "/centers/add",
+    "state": "默认",
+    "file": "png/wallet/w05-add-center.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w06-center-detail",
+    "product": "wallet",
+    "title": "中心详情",
+    "route": "/centers/:centerId",
+    "state": "默认",
+    "file": "png/wallet/w06-center-detail.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w07-enrollment-draft",
+    "product": "wallet",
+    "title": "注册草稿",
+    "route": "/centers/:centerId/enroll?draft=:draftId",
+    "state": "默认",
+    "file": "png/wallet/w07-enrollment-draft.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w08-enrollments",
+    "product": "wallet",
+    "title": "申请列表",
+    "route": "/enrollments",
+    "state": "默认",
+    "file": "png/wallet/w08-enrollments.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w09-enrollment-detail",
+    "product": "wallet",
+    "title": "申请详情",
+    "route": "/enrollments/:enrollmentId",
+    "state": "默认",
+    "file": "png/wallet/w09-enrollment-detail.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w10-credentials",
+    "product": "wallet",
+    "title": "凭证列表",
+    "route": "/credentials",
+    "state": "默认",
+    "file": "png/wallet/w10-credentials.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w11-credential-detail",
+    "product": "wallet",
+    "title": "凭证详情",
+    "route": "/credentials/:credentialId",
+    "state": "默认",
+    "file": "png/wallet/w11-credential-detail.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w12-apps",
+    "product": "wallet",
+    "title": "受信应用",
+    "route": "/apps",
+    "state": "默认",
+    "file": "png/wallet/w12-apps.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w13-new-app",
+    "product": "wallet",
+    "title": "添加受信应用",
+    "route": "/apps/new",
+    "state": "默认",
+    "file": "png/wallet/w13-new-app.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w14-edit-app",
+    "product": "wallet",
+    "title": "编辑受信应用",
+    "route": "/apps/:appId/edit",
+    "state": "默认",
+    "file": "png/wallet/w14-edit-app.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w15-import-challenge",
+    "product": "wallet",
+    "title": "开始登录 / 导入挑战",
+    "route": "/login/new?app=:appId",
+    "state": "默认",
+    "file": "png/wallet/w15-import-challenge.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w16-disclosure",
+    "product": "wallet",
+    "title": "登录披露授权",
+    "route": "/login/:taskId",
+    "state": "待授权",
+    "file": "png/wallet/w16-disclosure.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w17-local-settings",
+    "product": "wallet",
+    "title": "本地设置",
+    "route": "/settings",
+    "state": "默认",
+    "file": "png/wallet/w17-local-settings.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w18-verify-center",
+    "product": "wallet",
+    "title": "核对中心指纹",
+    "route": "/centers/add",
+    "state": "独立指纹核对",
+    "file": "png/wallet/w18-verify-center.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w19-submit-preview",
+    "product": "wallet",
+    "title": "完整提交预览",
+    "route": "/centers/:centerId/enroll?draft=:draftId",
+    "state": "提交预览",
+    "file": "png/wallet/w19-submit-preview.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w20-enrollment-returned",
+    "product": "wallet",
+    "title": "申请退回修改",
+    "route": "/enrollments/:enrollmentId",
+    "state": "CHANGES_REQUIRED",
+    "file": "png/wallet/w20-enrollment-returned.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w21-credential-save-failed",
+    "product": "wallet",
+    "title": "凭证保存失败恢复",
+    "route": "/enrollments/:enrollmentId",
+    "state": "中心 ISSUED / 本地保存失败",
+    "file": "png/wallet/w21-credential-save-failed.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w22-enrollment-ready",
+    "product": "wallet",
+    "title": "领证完成",
+    "route": "/enrollments/:enrollmentId",
+    "state": "凭证可用",
+    "file": "png/wallet/w22-enrollment-ready.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w23-enrollment-offline",
+    "product": "wallet",
+    "title": "申请离线状态",
+    "route": "/enrollments/:enrollmentId",
+    "state": "同步失败 / 保留上次中心状态",
+    "file": "png/wallet/w23-enrollment-offline.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w24-delete-credential",
+    "product": "wallet",
+    "title": "删除本地凭证确认",
+    "route": "/credentials/:credentialId",
+    "state": "删除确认",
+    "file": "png/wallet/w24-delete-credential.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w25-no-credential",
+    "product": "wallet",
+    "title": "首次登录缺少凭证",
+    "route": "/login/:taskId",
+    "state": "缺少凭证",
+    "file": "png/wallet/w25-no-credential.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w26-login-waiting",
+    "product": "wallet",
+    "title": "首次登录等待领证",
+    "route": "/login/:taskId",
+    "state": "等待领证",
+    "file": "png/wallet/w26-login-waiting.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w27-refresh-challenge",
+    "product": "wallet",
+    "title": "首次领证后获取新挑战",
+    "route": "/login/:taskId",
+    "state": "等待新挑战",
+    "file": "png/wallet/w27-refresh-challenge.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w28-generating-proof",
+    "product": "wallet",
+    "title": "正在生成登录证明",
+    "route": "/login/:taskId",
+    "state": "正在生成",
+    "file": "png/wallet/w28-generating-proof.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w29-proof-result",
+    "product": "wallet",
+    "title": "公开证明交付",
+    "route": "/login/:taskId",
+    "state": "证明可交付 / 尚未建立应用会话",
+    "file": "png/wallet/w29-proof-result.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w30-fingerprint-mismatch",
+    "product": "wallet",
+    "title": "中心指纹不匹配",
+    "route": "/centers/add",
+    "state": "指纹不符 / 禁止连接",
+    "file": "png/wallet/w30-fingerprint-mismatch.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w31-empty-claims",
+    "product": "wallet",
+    "title": "空属性集合草稿",
+    "route": "/centers/:centerId/enroll?draft=:draftId",
+    "state": "空 Claims 合集",
+    "file": "png/wallet/w31-empty-claims.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w32-submit-unknown",
+    "product": "wallet",
+    "title": "提交结果未知",
+    "route": "/enrollments/:enrollmentId",
+    "state": "原申请可恢复重试",
+    "file": "png/wallet/w32-submit-unknown.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w33-challenge-expired",
+    "product": "wallet",
+    "title": "登录挑战过期",
+    "route": "/login/:taskId",
+    "state": "挑战失效",
+    "file": "png/wallet/w33-challenge-expired.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w34-missing-claim",
+    "product": "wallet",
+    "title": "凭证缺少必需属性",
+    "route": "/login/:taskId",
+    "state": "缺少必需属性",
+    "file": "png/wallet/w34-missing-claim.png",
+    "width": 2560,
+    "height": 1800
+  },
+  {
+    "id": "w35-disclosure-refused",
+    "product": "wallet",
+    "title": "拒绝披露 / 登录中止",
+    "route": "/login/:taskId",
+    "state": "用户拒绝",
+    "file": "png/wallet/w35-disclosure-refused.png",
+    "width": 2560,
+    "height": 1800
+  }
+]

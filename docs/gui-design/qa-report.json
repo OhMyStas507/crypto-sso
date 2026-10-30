@@ -1,0 +1,608 @@
+{
+  "generatedAt": "2026-10-30T11:48:00.487Z",
+  "total": 54,
+  "bootstrapIconsVersion": "1.13.2",
+  "routeCoverage": {
+    "document": "docs/identity-center-wallet-project-structure.md",
+    "required": 28,
+    "covered": 28,
+    "missing": []
+  },
+  "failures": [],
+  "metrics": [
+    {
+      "id": "a01-login",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 2,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a02-overview",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 24,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a03-enrollments",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 35,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a04-review",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 18,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a05-members",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 35,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a06-member-detail",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 18,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a07-issuances",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 28,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a08-service-settings",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 16,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a09-claim-hints",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 23,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a10-issuer-info",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 20,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a11-audit",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 28,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a12-not-found",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 16,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a13-approve-confirm",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 20,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a14-return-dialog",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 19,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a15-reject-dialog",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 19,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a16-issue-failed",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a17-settings-conflict",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 18,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a18-login-error",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 3,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a19-hints-preview",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 17,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "w01-welcome",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 5,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w02-unlock",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 4,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w03-home",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 26,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w04-centers",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 25,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w05-add-center",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 15,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w06-center-detail",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 22,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w07-enrollment-draft",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w08-enrollments",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w09-enrollment-detail",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 19,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w10-credentials",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 22,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w11-credential-detail",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 24,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w12-apps",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w13-new-app",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 17,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w14-edit-app",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 17,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w15-import-challenge",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 18,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w16-disclosure",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 20,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w17-local-settings",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 20,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w18-verify-center",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 16,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w19-submit-preview",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 23,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w20-enrollment-returned",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 20,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w21-credential-save-failed",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w22-enrollment-ready",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w23-enrollment-offline",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w24-delete-credential",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 27,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w25-no-credential",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 17,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w26-login-waiting",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 19,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w27-refresh-challenge",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 19,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w28-generating-proof",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 18,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w29-proof-result",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 22,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w30-fingerprint-mismatch",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 15,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w31-empty-claims",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 18,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w32-submit-unknown",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 21,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w33-challenge-expired",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 17,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w34-missing-claim",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 17,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "id": "w35-disclosure-refused",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 17,
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    }
+  ]
+}
