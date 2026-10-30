@@ -44,7 +44,11 @@ export type Command =
   | "get_preferences"
   | "save_preferences";
 
+export const registrationClosedMessage =
+  "身份中心已暂停接受新申请。请联系管理员在“服务设置”中开启“接受新注册”并保存后重试。";
+
 const messages: Record<string, string> = {
+  REGISTRATION_CLOSED: registrationClosedMessage,
   CREDENTIAL_DELETED: "本地凭证已删除，中心名额仍保留。本期不支持自动补发。",
   WALLET_LOCKED: "钱包已锁定，请重新解锁。",
   NETWORK_UNAVAILABLE: "无法连接中心，已保留本地恢复材料与上次状态。",

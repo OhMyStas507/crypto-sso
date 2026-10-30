@@ -3,6 +3,7 @@ import { A, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
 import {
   command,
+  registrationClosedMessage,
   type Center,
   type Draft,
   type LocalEnrollment,
@@ -135,6 +136,11 @@ export function DraftPage() {
         <span>③ 提交审批</span>
       </div>
       <ErrorNotice error={q.error || action.error() || center.error} />
+      <Show when={center.data?.info.settings.registration_enabled === false}>
+        <Notice>
+          中心上次公开的信息显示注册已关闭。当前草稿仍可编辑和保存；提交时会重新检查注册状态。
+        </Notice>
+      </Show>
       <Show when={error()}>
         <Notice danger>{error()}</Notice>
       </Show>
@@ -418,10 +424,17 @@ export function EnrollmentDetail() {
               <Notice danger>
                 {d().error === "ISSUER_MISMATCH"
                   ? "中心指纹发生变化，已阻止传输。"
-                  : "中心连接暂不可用，保留上次中心状态和本地恢复材料。"}
+                  : d().error === "REGISTRATION_CLOSED"
+                    ? `${registrationClosedMessage} 原申请已保留，自动重试已暂停；恢复注册后点击“刷新 / 重试原申请”。`
+                    : "中心连接暂不可用，保留上次中心状态和本地恢复材料。"}
               </Notice>
             </Show>
-            <Show when={d().local_state === "SUBMISSION_UNKNOWN"}>
+            <Show
+              when={
+                d().local_state === "SUBMISSION_UNKNOWN" &&
+                d().error !== "REGISTRATION_CLOSED"
+              }
+            >
               <Notice>
                 提交结果未知。请重试原申请；钱包会使用原请求 ID、原 pending
                 与原访问秘密。

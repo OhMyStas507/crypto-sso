@@ -292,6 +292,42 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
         .command("save_enrollment_draft", draft.clone())
         .await
         .unwrap();
+    // Check live registration settings even when the wallet cached an open center.
+    let mut settings = app.info().await.unwrap().settings;
+    settings.registration_enabled = false;
+    app.save_settings("admin", &token(), settings)
+        .await
+        .unwrap();
+    assert_eq!(
+        engine
+            .command("submit_enrollment", json!({"draft_id":draft["id"]}))
+            .await
+            .unwrap_err(),
+        "REGISTRATION_CLOSED"
+    );
+    engine.command("lock_wallet", json!({})).await.unwrap();
+    engine.command("unlock_wallet", json!({})).await.unwrap();
+    assert_eq!(
+        engine
+            .command("get_enrollment_draft", json!({"id":draft["id"]}))
+            .await
+            .unwrap(),
+        draft
+    );
+    assert_eq!(
+        engine.command("list_enrollments", json!({})).await.unwrap(),
+        json!([])
+    );
+    engine
+        .command("refresh_claim_hints", json!({"id":center_id}))
+        .await
+        .unwrap();
+    // Reopening must work even while the cached registration setting remains closed.
+    let mut settings = app.info().await.unwrap().settings;
+    settings.registration_enabled = true;
+    app.save_settings("admin", &token(), settings)
+        .await
+        .unwrap();
     let submitted = engine
         .command("submit_enrollment", json!({"draft_id":draft["id"]}))
         .await

@@ -349,6 +349,9 @@ impl Engine {
                 let draft = doc.drafts.get(draft_id).ok_or("NOT_FOUND")?;
                 let center = doc.centers.get(&draft.center_id).ok_or("NOT_FOUND")?;
                 let current_info = self.check_center(center).await?;
+                if !current_info.settings.registration_enabled {
+                    return Err("REGISTRATION_CLOSED".into());
+                }
                 let claims = Claims::new(draft.rows.clone()).map_err(|_| "INVALID_CLAIMS")?;
                 let limits = &current_info.effective_claims_limits;
                 if claims.len() > limits.max_keys as usize
@@ -807,7 +810,12 @@ impl Engine {
             let e = doc.enrollments.get_mut(id).ok_or("NOT_FOUND")?;
             e.error = Some(error.into());
             if e.view.is_none() {
-                e.local_state = "SUBMISSION_UNKNOWN".into();
+                e.local_state = if error == "REGISTRATION_CLOSED" {
+                    "SAVED_PENDING_SUBMISSION"
+                } else {
+                    "SUBMISSION_UNKNOWN"
+                }
+                .into();
             }
             Ok(())
         })
@@ -819,6 +827,11 @@ impl Engine {
                 doc.enrollments
                     .values()
                     .filter(|e| {
+                        // A definite rejection needs an explicit retry after registration reopens.
+                        // Unknown submissions still retry the original request to resolve acceptance.
+                        if e.view.is_none() && e.error.as_deref() == Some("REGISTRATION_CLOSED") {
+                            return false;
+                        }
                         !matches!(
                             e.local_state.as_str(),
                             "CREDENTIAL_READY" | "CREDENTIAL_DELETED"
@@ -856,6 +869,64 @@ fn enrollment_view(e: &LocalEnrollment) -> Value {
         synced_at: e.synced_at,
         recovery_saved: e.pending.is_some() || e.local_state == "CREDENTIAL_READY"
     })
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn registration_rejection_pauses_retries_and_preserves_recovery_after_unlock() {
+        let directory = tempfile::tempdir().unwrap();
+        let engine = Engine::new(directory.path().into(), 5, 1048576).unwrap();
+        engine
+            .command("initialize_wallet", json!({}))
+            .await
+            .unwrap();
+        let (epoch, _) = engine.snapshot(false).unwrap();
+        let id = "original-request";
+        engine
+            .update(epoch, |doc| {
+                doc.enrollments.insert(
+                    id.into(),
+                    LocalEnrollment {
+                        id: id.into(),
+                        center_id: "center".into(),
+                        pending: Some(Zeroizing::new("original-pending".into())),
+                        access: Zeroizing::new(token()),
+                        submission: "original-submission".into(),
+                        claims: Default::default(),
+                        view: None,
+                        local_state: "SAVED_PENDING_SUBMISSION".into(),
+                        response: None,
+                        error: None,
+                        synced_at: None,
+                    },
+                );
+                Ok(())
+            })
+            .unwrap();
+        let original = engine.snapshot(false).unwrap().1.enrollments[id].clone();
+        // An uncertain network result must continue retrying the original request.
+        engine
+            .record_sync_error(epoch, id, "NETWORK_UNAVAILABLE")
+            .unwrap();
+        assert_eq!(engine.pending_sync_ids(), vec![(id.into(), 5)]);
+        engine
+            .record_sync_error(epoch, id, "REGISTRATION_CLOSED")
+            .unwrap();
+        assert!(engine.pending_sync_ids().is_empty());
+        engine.command("lock_wallet", json!({})).await.unwrap();
+        engine.command("unlock_wallet", json!({})).await.unwrap();
+        assert!(engine.pending_sync_ids().is_empty());
+        let (_, saved) = engine.snapshot(false).unwrap();
+        let entry = &saved.enrollments[id];
+        assert_eq!(entry.local_state, "SAVED_PENDING_SUBMISSION");
+        assert_eq!(entry.error.as_deref(), Some("REGISTRATION_CLOSED"));
+        assert_eq!(entry.pending, original.pending);
+        assert_eq!(entry.access, original.access);
+        assert_eq!(entry.submission, original.submission);
+    }
 }
 fn credential_view(c: &Credential) -> Value {
     json!(crate::dto::CredentialView {
