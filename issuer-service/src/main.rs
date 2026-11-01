@@ -1,4 +1,4 @@
-use issuer_service::{application::Application, config::Config, http, worker};
+use issuer_service::{config::Config, viewmodels::Application, views, worker};
 use salvo::prelude::*;
 
 #[tokio::main]
@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("identity center shutdown requested");
         handle.stop_graceful(None);
     });
-    server.serve(http::service(app)).await;
+    server.serve(views::service(app)).await;
     worker.abort();
     tracing::info!("identity center stopped");
     Ok(())

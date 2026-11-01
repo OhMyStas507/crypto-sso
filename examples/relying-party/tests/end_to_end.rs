@@ -2,9 +2,15 @@
 //! Run only against a dedicated *_test database: cargo test -p crypto-sso-relying-party --test end_to_end -- --ignored
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use crypto_sso_holder::{ClaimKeys, Claims, Holder, Origin, wire};
-use crypto_sso_identity_api::{ClaimHint, EnrollmentStatus, ReviewDecision, SubmitEnrollment};
+use crypto_sso_identity_api::{
+    ClaimHint, EnrollmentStatus, EnrollmentView, Page, ReviewDecision, SubmitEnrollment,
+};
 use crypto_sso_issuer::Issuer;
 use crypto_sso_relying_party::{App as RelyingParty, StoredChallenge};
+use issuer_service::viewmodels::contracts::{
+    AdminEnrollmentView, AuditEventView, ClaimHintsResponse, MemberDetailView, MemberView,
+    OverviewView, ReviewAction,
+};
 use issuer_service::{
     application::Application,
     config::Config,
@@ -52,6 +58,19 @@ fn decision(e: &Enrollment, member: &str) -> ReviewDecision {
 }
 async fn read(app: &Application, id: &str) -> Enrollment {
     Enrollment::get_by_request_id(&mut app.store.database(), &id.to_owned())
+        .await
+        .unwrap()
+}
+
+async fn http_get<T: serde::de::DeserializeOwned>(client: &Client, url: &str) -> T {
+    client
+        .get(url)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
         .await
         .unwrap()
 }
@@ -238,7 +257,10 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
         .unwrap();
     assert_eq!(saved.status(), 200);
     assert_eq!(
-        app.save_settings("admin", &key, s.clone()).await.unwrap()["revision"],
+        app.save_settings("admin", &key, s.clone())
+            .await
+            .unwrap()
+            .revision,
         2
     );
     assert_eq!(
@@ -257,6 +279,23 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
             .settings
             .registration_enabled
     );
+
+    let hints_url = format!("{base}/api/v1/claim-hints");
+    let hints_response = browser.get(&hints_url).send().await.unwrap();
+    assert_eq!(hints_response.status(), 200);
+    let etag = hints_response.headers()["etag"].clone();
+    let hints: ClaimHintsResponse = hints_response.json().await.unwrap();
+    assert_eq!(hints.revision, 2);
+    assert_eq!(hints.claims[0].key, "role");
+    assert!(hints.allow_custom_claims);
+    let cached = browser
+        .get(&hints_url)
+        .header("if-none-match", etag)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cached.status(), 304);
+    assert!(cached.bytes().await.unwrap().is_empty());
 
     let wallet_directory = temporary.path().join("wallet");
     let engine = Engine::new(wallet_directory.clone(), 5, 1048576).unwrap();
@@ -354,18 +393,21 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
     let approval = decision(&e, "member-1");
     let key = token();
     let approved = app
-        .review(id, "admin", &key, "approve", approval.clone())
+        .review(id, "admin", &key, ReviewAction::Approve, approval.clone())
         .await
         .unwrap();
-    assert_eq!(approved["status"], "APPROVED");
+    assert_eq!(approved.status, EnrollmentStatus::Approved);
     assert_eq!(
-        app.review(id, "admin", &key, "approve", approval.clone())
-            .await
-            .unwrap(),
-        approved
+        serde_json::to_value(
+            app.review(id, "admin", &key, ReviewAction::Approve, approval.clone())
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(&approved).unwrap()
     );
     assert_eq!(
-        app.review(id, "admin", &token(), "approve", approval)
+        app.review(id, "admin", &token(), ReviewAction::Approve, approval)
             .await
             .unwrap_err()
             .status,
@@ -379,6 +421,67 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
     );
     let issued = read(&app, id).await;
     assert_eq!(issued.view.status, EnrollmentStatus::Issued);
+    // Exercise each typed admin read endpoint and preserve the original JSON projection.
+    let overview: OverviewView = http_get(&browser, &format!("{admin_url}/overview")).await;
+    assert_eq!(overview.issued, 1);
+    assert_eq!(overview.recent[0].view.request_id, id);
+    let detail: AdminEnrollmentView =
+        http_get(&browser, &format!("{admin_url}/enrollments/{id}")).await;
+    assert_eq!(
+        serde_json::to_value(&detail).unwrap(),
+        json!({
+            "view": issued.view, "claims": issued.claims, "application_note": issued.application_note,
+            "claim_hints_revision": issued.claim_hints_revision, "hints_snapshot": issued.hints_snapshot,
+            "decision": issued.decision, "reviewer": issued.reviewer, "reviewed_at": issued.reviewed_at,
+            "issued_at": issued.issued_at, "failure_code": issued.failure_code, "history": issued.history,
+        })
+    );
+    let serialized = serde_json::to_string(&detail).unwrap();
+    for secret in [
+        "access_hash",
+        "metadata_hash",
+        "raw_request",
+        "blind_credential",
+        "lease_until",
+    ] {
+        assert!(!serialized.contains(secret));
+    }
+    for resource in ["enrollments", "issuances"] {
+        let page: Page<AdminEnrollmentView> = http_get(
+            &browser,
+            &format!("{admin_url}/{resource}?status=ISSUED&q=Alice"),
+        )
+        .await;
+        assert_eq!(page.total, 1);
+        assert_eq!(page.items[0].view.request_id, id);
+        assert!(page.next_cursor.is_none());
+    }
+    let empty: Page<AdminEnrollmentView> =
+        http_get(&browser, &format!("{admin_url}/enrollments?status=UNKNOWN")).await;
+    assert_eq!(empty.total, 0);
+    let beyond: Page<AdminEnrollmentView> = http_get(
+        &browser,
+        &format!("{admin_url}/enrollments?cursor={}", usize::MAX),
+    )
+    .await;
+    assert!(beyond.items.is_empty());
+    assert!(beyond.next_cursor.is_none());
+    let members: Page<MemberView> =
+        http_get(&browser, &format!("{admin_url}/members?q=member-1")).await;
+    assert_eq!(members.total, 1);
+    assert!(members.items[0].issued);
+    let member: MemberDetailView =
+        http_get(&browser, &format!("{admin_url}/members/member-1")).await;
+    assert_eq!(member.enrollment.view.request_id, id);
+    assert_eq!(member.member.member_ref, "member-1");
+    let audit: Page<AuditEventView> =
+        http_get(&browser, &format!("{admin_url}/audit-events")).await;
+    assert!(
+        audit
+            .items
+            .iter()
+            .any(|event| event.action == "CREDENTIAL_ISSUED" && event.target == id)
+    );
     let raw = issued.blind_credential.clone().unwrap();
     worker::tick(&app).await.unwrap();
     assert_eq!(
@@ -430,7 +533,7 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
                 &empty.request_id,
                 "admin",
                 &token(),
-                "approve",
+                ReviewAction::Approve,
                 decision(&e, "member-1")
             )
             .await
@@ -446,12 +549,46 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
             &empty.request_id,
             "admin",
             &approve_key,
-            "approve",
+            ReviewAction::Approve,
             approval
         ),
-        restarted.wallet_action(&empty.request_id, &access, "cancel", Some(1))
+        restarted.enrollment_cancel(&empty.request_id, &access, 1)
     );
     assert_ne!(approve.is_ok(), cancel.is_ok());
+
+    let (_, request) =
+        Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
+    let cancel_access = token();
+    let (_, cancellable) = app
+        .submit(submit(&request, None), &cancel_access)
+        .await
+        .unwrap();
+    let cancel_url = format!(
+        "{base}/api/v1/enrollments/{}/cancel",
+        cancellable.request_id
+    );
+    let cancelled = browser
+        .post(&cancel_url)
+        .bearer_auth(&cancel_access)
+        .json(&json!({"expected_revision": 1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cancelled.status(), 200);
+    let cancelled: EnrollmentView = cancelled.json().await.unwrap();
+    assert_eq!(cancelled.status, EnrollmentStatus::Cancelled);
+    assert_eq!(cancelled.revision, 2);
+    assert_eq!(
+        browser
+            .post(&cancel_url)
+            .bearer_auth(&cancel_access)
+            .json(&json!({"expected_revision": 1}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
 
     // Stale signing leases are fenced out and become explicitly retryable.
     let (_, request) =
@@ -465,7 +602,7 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
         &view.request_id,
         "admin",
         &token(),
-        "approve",
+        ReviewAction::Approve,
         decision(&entry, "member-3"),
     )
     .await
@@ -504,7 +641,7 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
             &view.request_id,
             "admin",
             &token(),
-            "approve",
+            ReviewAction::Approve,
             decision(&entry, &format!("small-set-{index}")),
         )
         .await
@@ -532,7 +669,7 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
         &invalid_view.request_id,
         "admin",
         &token(),
-        "approve",
+        ReviewAction::Approve,
         decision(&invalid_entry, "invalid-proof-member"),
     )
     .await
@@ -549,7 +686,7 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
     assert_eq!(failed.view.status, EnrollmentStatus::InvalidRequest);
     assert!(failed.blind_credential.is_none());
 
-    for action in ["request-changes", "reject"] {
+    for action in [ReviewAction::RequestChanges, ReviewAction::Reject] {
         let (_, request) =
             Holder::begin_enrollment(issuer.public(), &Claims::empty(), &mut OsRng).unwrap();
         let (_, view) = app.submit(submit(&request, None), &token()).await.unwrap();
@@ -574,7 +711,7 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
                 &view.request_id,
                 "admin",
                 &token(),
-                "approve",
+                ReviewAction::Approve,
                 decision(&terminal, "unused")
             )
             .await
@@ -601,8 +738,20 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
     let key_a = token();
     let key_b = token();
     let (result_a, result_b) = tokio::join!(
-        app.review(&view_a.request_id, "admin", &key_a, "approve", decision_a),
-        restarted.review(&view_b.request_id, "admin", &key_b, "approve", decision_b),
+        app.review(
+            &view_a.request_id,
+            "admin",
+            &key_a,
+            ReviewAction::Approve,
+            decision_a
+        ),
+        restarted.review(
+            &view_b.request_id,
+            "admin",
+            &key_b,
+            ReviewAction::Approve,
+            decision_b
+        ),
     );
     assert_ne!(result_a.is_ok(), result_b.is_ok());
     let (winner, loser, loser_key, error) = match (result_a, result_b) {

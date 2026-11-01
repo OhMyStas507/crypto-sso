@@ -1,6 +1,6 @@
 # 身份中心与钱包项目结构、模块及页面设计
 
-文档状态：待实现的结构设计，仅规划目录、职责、依赖、页面及接口边界，不包含业务实现代码。
+文档状态：结构设计与实现约定。第 4 节补充 2026-11-01 的后端 MVVM 实现；其他目录树仍为能力规划。
 
 日期：2026-10-30。业务基线：[身份验证中心与钱包业务流程](identity-center-wallet-business-flow.md)。技术栈固定为 PostgreSQL、Salvo、Toasty、Solid 和 Tauri；密码学部分沿用现有 SDK v0.1 / 协议 v1。
 
@@ -121,8 +121,8 @@ SDK JSON 包装保留内层原始对象，避免 HTTP 外层先反序列化为�
 |---|---|---|
 | SDK 公共交换消息 | 现有 SDK core | 编码和密码学含义沿用现有协议 |
 | HTTP 请求、响应及公开错误码 | `identity-api` | 中心、钱包和管理后台共同遵循 |
-| ORM 模型 | 中心 `infrastructure/postgres/models` | 不直接返回给 HTTP 或前端 |
-| 中心领域对象 | 中心 `domain` | 表达状态、审批及签发规则，不包含 HTTP Cookie |
+| ORM 模型 | 中心 `models` | 不直接返回给 HTTP 或前端 |
+| 中心领域规则 | 中心 `models/domain.rs` | 表达状态、审批及签发规则，管理员会话作为服务端身份模型保存 |
 | 页面表单模型 | 各前端 `features/*/model.ts` | 包括脏状态、校验和展示，不复制服务端权威状态 |
 | IPC DTO 和事件载荷 | 钱包 Rust `commands/dto` | 单独生成到钱包 `bridge`；不加入公开 HTTP 契约 |
 | 钱包秘密与本地记录 | 钱包 Rust `domain`、`storage` | 不导出通用前端读取接口 |
@@ -142,6 +142,47 @@ SDK JSON 包装保留内层原始对象，避免 HTTP 外层先反序列化为�
 首期成员页面以查询为主。建立新成员及绑定可信资料发生在批准用例的事务中；无需增加一套独立的成员账号、密码、角色和用户自助登录系统。
 
 ## 4. 身份中心后端目录
+
+当前后端按照 MVVM 划分：`models` 保存持久化实体及领域规则，`viewmodels` 编排业务事务并定义展示契约，`views` 适配 Salvo HTTP。新增能力应沿这三个层次放置代码，Model 和 ViewModel 的类型声明均需中文用途注释。
+
+```text
+issuer-service/src/
+├── models/                           # Model
+│   ├── mod.rs                        # 统一导出实体，保持原有导入路径
+│   ├── settings.rs                   # 中心身份、服务配置、属性提示版本
+│   ├── enrollment.rs                 # 申请聚合、审核历史、成员
+│   ├── audit.rs                      # 审计事件、幂等结果存储
+│   ├── session.rs                    # 浏览器会话、撤销、挑战、应用会话
+│   └── domain.rs                     # 管理员会话、校验、状态迁移、审计规则
+├── viewmodels/                       # ViewModel
+│   ├── mod.rs                        # Application 共享依赖和初始化
+│   ├── contracts.rs                  # 明确的请求、响应、查询与审核动作类型
+│   ├── auth.rs                       # 管理员凭据验证
+│   ├── enrollment.rs                 # 申请提交、状态、取消与凭证读取
+│   ├── settings.rs                   # 配置保存与修订控制
+│   ├── review.rs                     # 审批、退回、拒绝及重试事务
+│   ├── queries.rs                    # 总览、成员、签发台账和审计查询
+│   └── idempotency.rs                # 从历史 JSON 记录恢复指定类型的响应
+├── views/                            # View
+│   ├── mod.rs                        # 路由、HTTP 提取与健康检查
+│   ├── public.rs                     # 钱包公开 API
+│   ├── admin.rs                      # 管理 API、Cookie 和会话适配
+│   └── middleware.rs                 # 来源、会话、限流与安全响应头
+├── application.rs                    # 兼容导出 viewmodels::Application
+├── domain.rs                         # 兼容导出 models::domain
+├── store.rs                          # 模型注册、数据库连接与启动迁移
+├── session_store.rs                  # Salvo PostgreSQL 会话存储适配
+├── worker.rs                         # 持久化签发租约和后台调度
+├── config.rs                         # 部署配置
+├── security.rs                       # 令牌、摘要和时间工具
+└── error.rs                          # 稳定错误与 HTTP 错误映射
+```
+
+HTTP handler 统一使用 `<操作对象>_<动作>` 命名，例如 `enrollment_submit`、`enrollment_approve`、`settings_save`、`admin_session_create`。签名返回具体的 `Json<T>`、`Json<Page<T>>` 或明确的中间件结果类型，禁止使用 `Json<Value>` 等动态类型。带 ETag 的属性提示接口返回 `ClaimHintsReply` 枚举，分别渲染 `ClaimHintsResponse` 或无响应体的 304。共享契约仍定义在 `crates/identity-api`；后端专用展示类型定义在 `viewmodels/contracts.rs`。SDK 交换消息保留原始 JSON，由 SDK wire 入口严格解析。
+
+现有 URL、JSON 字段及数据库映射保持兼容。`http` 是 `views` 的兼容导出；旧 Rust 调用方使用审核用例时，需将字符串动作替换为 `ReviewAction`，并读取具体响应类型的字段。钱包的通用 `wallet_action` 已拆为 `enrollment_status`、`enrollment_cancel` 和 `credential_get`。
+
+以下目录树保留为早期能力规划，当前扩展以以上 MVVM 结构为准：
 
 ```text
 issuer-service/
@@ -242,15 +283,15 @@ issuer-service/
 
 | 模块 | 负责 | 调用方式 |
 |---|---|---|
-| `http` | 路由、权限上下文、严格外层解析、状态码与 Cookie | 调用 `application`；不直接写数据库 |
-| `application` | 编排完整用例、核对哈希、选择事务操作、构造结果 | 使用领域规则及有限的能力接口 |
-| `domain` | 状态迁移、审批条件、设置校验及审计事件构造 | 状态规则使用普通函数，审计通过调用方传入的 Executor 创建 |
+| `views` | 路由、权限上下文、严格外层解析、状态码与 Cookie | 调用 `viewmodels`；会话持久化由 Salvo 适配器处理 |
+| `viewmodels` | 编排完整用例、核对哈希、拥有业务事务、构造明确类型的结果 | 使用 `models` 的领域规则和 Toasty 原生事务 |
+| `models/domain` | 状态迁移、审批条件、设置校验及审计事件构造 | 状态规则使用普通函数，审计通过调用方传入的 Executor 创建 |
 | `models / store` | 类型化 Toasty 模型、统一注册、连接与启动迁移 | CRUD 由用例直接使用框架生成的 API |
 | `sdk/issuer` | 保持固定 issuer、严格 SDK 解析及盲签发 | 使用 issuer crate；不依赖 holder/verifier |
 | `workers` | 调度、退避、租约恢复、服务停止 | 调用与 HTTP 共用的用例，不重复写一套签发逻辑 |
 | `bootstrap` | 配置并组装上述依赖 | 在 SDK 使用和工作线程启动前设置 ClaimsLimits |
 
-当前实现不为每张表建立通用 CRUD trait 或通用 JSON 存取函数；由 `application.rs`、`worker.rs` 和会话/应用适配器直接拥有 Toasty 原生事务；`models.rs` 定义类型化 ORM 模型，`store.rs` 仅提供模型注册、数据库句柄与启动迁移。所有关联读写传入同一个 `&mut Transaction`，不能在事务中重新取得全局数据库句柄执行关联操作。
+当前实现不为每张表建立通用 CRUD trait 或通用 JSON 存取函数；由 `viewmodels`、`worker.rs` 和会话/应用适配器直接拥有 Toasty 原生事务；`models` 按业务对象定义类型化 ORM 模型，`store.rs` 仅提供模型注册、数据库句柄与启动迁移。所有关联读写传入同一个 `&mut Transaction`，不能在事务中重新取得全局数据库句柄执行关联操作。
 
 ## 5. PostgreSQL 模型与事务归属
 
@@ -321,7 +362,7 @@ member.update().issued(true).exec(&mut tx).await?;
 
 按 [Toasty 0.11 Schema Management](https://tokio-rs.github.io/toasty/0.11.0/guide/schema-management.html)，模型以 Rust `toasty::Model` 定义并统一注册；迁移、映射快照与历史集中在服务自己的 `toasty/` 下。使用官方 `ToastyCli` 生成模型差异迁移，通过 `toasty::embed_migrations!()` 将迁移集编译进程序。根 `Toasty.toml` 配置产物目录，`issuer-db` 提供官方迁移命令入口。
 
-模型统一定义于 `models.rs` 并由 `store.rs` 注册；用例直接调用 Toasty 的 CRUD 与事务 API，结构化 JSONB 字段的编解码交给原生 `Json<T>`。对 ORM 之外确需使用的 PostgreSQL DDL，放入受版本管理的迁移；用例及 handler 不散落 SQL，也不再并行引入另一套 ORM。
+模型按业务对象定义于 `models` 并由 `store.rs` 统一注册；用例直接调用 Toasty 的 CRUD 与事务 API，结构化 JSONB 字段的编解码交给原生 `Json<T>`。对 ORM 之外确需使用的 PostgreSQL DDL，放入受版本管理的迁移；用例及 handler 不散落 SQL，也不再并行引入另一套 ORM。
 
 中心和示例应用在每次启动时调用 Toasty `MigrationSet::apply`，自动应用各自数据库中尚未执行的迁移；框架维护 `__toasty_migrations` 并跳过已应用版本。迁移完成后才启动 HTTP 服务和后台任务，失败则退出。模型变更后生成、审阅并提交迁移产物，再重新构建程序；不在运行时手写建表或重新实现迁移历史管理。迁移验收覆盖新库、旧原型及已有旧迁移历史的数据库，验证所有类型化模型的数据搬迁、原生关联、旧锁表移除和重复启动。`0001_remove_transaction_guard.sql` 由官方 CLI 生成，不修改已应用的初始迁移；升级前停止旧版服务和 worker，避免不同事务实现混合运行。事务验收使用真实 PostgreSQL 验证提交可见性、自动/显式回滚、嵌套保存点及并发写偏差保护，并继续验证业务事务及任务竞争。
 

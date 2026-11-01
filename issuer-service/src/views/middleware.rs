@@ -1,5 +1,5 @@
 use super::{app, header};
-use crate::{domain::AdminSession, error::Error, security::now};
+use crate::{error::Error, models::domain::AdminSession, security::now};
 use salvo::{http::StatusCode, prelude::*, session::SessionDepotExt};
 use std::{
     collections::HashMap,
@@ -9,12 +9,12 @@ use std::{
 pub type RateMap = Arc<Mutex<HashMap<String, (u64, u32)>>>;
 
 #[handler]
-pub async fn check_origin(
+pub async fn origin_check(
     req: &mut Request,
     depot: &mut Depot,
     res: &mut Response,
     ctrl: &mut FlowCtrl,
-) {
+) -> () {
     if !matches!(req.method().as_str(), "GET" | "HEAD" | "OPTIONS")
         && !app(depot)
             .config
@@ -27,7 +27,11 @@ pub async fn check_origin(
 }
 
 #[handler]
-pub async fn require_admin(depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
+pub async fn admin_session_require(
+    depot: &mut Depot,
+    res: &mut Response,
+    ctrl: &mut FlowCtrl,
+) -> () {
     if let Some(admin) = depot
         .session()
         .and_then(|s| s.get::<AdminSession>("admin"))
@@ -45,12 +49,12 @@ pub async fn require_admin(depot: &mut Depot, res: &mut Response, ctrl: &mut Flo
 }
 
 #[handler]
-pub async fn request_policy(
+pub async fn request_policy_apply(
     req: &mut Request,
     depot: &mut Depot,
     res: &mut Response,
     ctrl: &mut FlowCtrl,
-) {
+) -> () {
     res.headers_mut()
         .insert("cache-control", "no-store".parse().unwrap());
     res.headers_mut()

@@ -1,5 +1,6 @@
 //! Exercise the same native Salvo logger used by both HTTP services, including
 //! early rejections and routing misses. This test needs no database.
+use issuer_service::viewmodels::contracts::HealthResponse;
 use issuer_service::{error::Error, http::with_access_logging};
 use salvo::{prelude::*, test::TestClient};
 use std::{
@@ -23,23 +24,25 @@ impl Write for LogBuffer {
 }
 
 #[handler]
-async fn ok_response() -> Json<serde_json::Value> {
-    Json(serde_json::json!({"status": "ok"}))
+async fn health_get() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok".into(),
+    })
 }
 
 #[handler]
-async fn reject(res: &mut Response, ctrl: &mut FlowCtrl) {
+async fn session_reject(res: &mut Response, ctrl: &mut FlowCtrl) -> () {
     res.render(Error::new(401, "LOGIN_REQUIRED", "请登录"));
     ctrl.skip_rest();
 }
 
 #[handler]
-async fn forbidden_response() -> Error {
+async fn origin_reject() -> Error {
     Error::new(403, "ORIGIN_REJECTED", "来源不匹配")
 }
 
 #[handler]
-async fn failure() -> Error {
+async fn service_fail() -> Error {
     Error::unavailable()
 }
 
@@ -57,14 +60,14 @@ async fn logs_each_api_path_at_info_without_request_secrets() {
     async {
         let service = with_access_logging(
             Router::new()
-                .push(Router::with_path("api/v1/service-info").get(ok_response))
+                .push(Router::with_path("api/v1/service-info").get(health_get))
                 .push(
                     Router::with_path("api/v1/private")
-                        .hoop(reject)
-                        .get(ok_response),
+                        .hoop(session_reject)
+                        .get(health_get),
                 )
-                .push(Router::with_path("api/v1/login/proofs").post(forbidden_response))
-                .push(Router::with_path("api/v1/failure").get(failure)),
+                .push(Router::with_path("api/v1/login/proofs").post(origin_reject))
+                .push(Router::with_path("api/v1/failure").get(service_fail)),
         );
         let public = TestClient::get("http://localhost/api/v1/service-info?token=QUERY_SECRET")
             .add_header("authorization", "Bearer BEARER_SECRET", true)

@@ -1,11 +1,11 @@
 //! Durable signing leases fence out stale workers. No response is exposed until its commit.
 use crate::{
-    application::Application,
-    domain::*,
     error::{Error, Result},
+    models::domain::*,
     models::{Settings, WebSession},
     security::now,
     store::IsolationLevel,
+    viewmodels::Application,
 };
 use crypto_sso_identity_api::EnrollmentStatus as Status;
 use crypto_sso_issuer::{Claims, EnrollmentRequest, wire};
