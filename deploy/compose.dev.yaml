@@ -10,8 +10,9 @@ services:
       POSTGRES_PASSWORD: crypto_sso_dev
     ports:
       - "127.0.0.1:5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
+    # Override the image's data volume with ephemeral memory storage.
+    tmpfs:
+      - /var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "crypto_sso", "-d", "crypto_sso"]
       interval: 5s
@@ -19,7 +20,7 @@ services:
       retries: 10
       start_period: 10s
 
-  # Explicitly run this profile after startup to also initialize existing volumes.
+  # Explicitly run this profile after each startup to initialize demo/test databases.
   # Database names and connection settings belong to Compose, not the app's .env.
   postgres-init:
     image: postgres:17-alpine
@@ -43,18 +44,14 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
       - "127.0.0.1:6379:6379"
-    volumes:
-      - redis-data:/data
+    tmpfs:
+      - /data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 5s
-
-volumes:
-  postgres-data:
-  redis-data:

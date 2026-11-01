@@ -22,6 +22,8 @@ bun install --cwd scripts
 
 `dev-compose.mjs` 为 Docker Compose 显式设置 `COMPOSE_DISABLE_ENV_FILE=true`，可透传 `up`、`ps`、`logs`、`down` 等命令，既不加载 `.env`，也不依赖其中的值。也可在终端先设置此开关，再直接运行 `docker compose -f deploy/compose.dev.yaml ...`。
 
+PostgreSQL 和 Redis 的数据目录使用 `tmpfs`，Redis 同时关闭 RDB 和 AOF 持久化。停止或删除容器都会清空数据；每次重新启动 PostgreSQL 后，需再次运行 `node scripts/init-dev-db.mjs` 创建示例和测试数据库。
+
 `init-dev-db.mjs` 仅运行 Compose 中声明的 `postgres-init` 服务，不读取应用配置。该服务幂等创建 `crypto_sso_demo` 和 `crypto_sso_test`，不清除已有数据；使用独立 `init` profile 避免普通 `up --wait` 把初始化任务当作长期运行服务。修改开发数据库设置时，更新 Compose 并同步应用 `.env` 中的连接字符串。`TEST_DATABASE_URL` 必须指向独立的、名称以 `_test` 结尾的数据库；集成测试会清空这个数据库内的业务记录。
 
 ## 启动

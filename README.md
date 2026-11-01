@@ -62,21 +62,22 @@ bun scripts/dev-compose.mjs up -d --wait
 bun scripts/init-dev-db.mjs
 ```
 
-[开发 Compose 配置](deploy/compose.dev.yaml) 提供 PostgreSQL 17 和 Redis 7，端口仅绑定 `127.0.0.1`，数据保存在 Docker 命名卷中。开发连接地址：
+[开发 Compose 配置](deploy/compose.dev.yaml) 提供 PostgreSQL 17 和 Redis 7，端口仅绑定 `127.0.0.1`，数据目录使用 `tmpfs`，停止或删除容器后自动清空数据。开发连接地址：
 
 | 服务 | 连接地址 |
 | --- | --- |
 | PostgreSQL | `postgresql://crypto_sso:crypto_sso_dev@127.0.0.1:5432/crypto_sso` |
 | Redis | `redis://127.0.0.1:6379/0`（无密码） |
 
-`dev-compose.mjs` 显式禁用 Docker Compose 自动加载 `.env`，直接透传 Compose 命令。需要调整开发基础设施时修改 `deploy/compose.dev.yaml`；PostgreSQL 的初始数据库、用户和密码仅在数据卷首次初始化时生效。`postgres-init` 服务幂等创建示例和测试数据库，支持已有数据卷。应用自身的连接字符串仍通过环境变量或应用 `.env` 提供，并与 Compose 中的配置保持一致。
+`dev-compose.mjs` 显式禁用 Docker Compose 自动加载 `.env`，直接透传 Compose 命令。需要调整开发基础设施时修改 `deploy/compose.dev.yaml`；PostgreSQL 每次重新启动都会按配置初始化全新数据库，之后需再次运行 `init-dev-db.mjs` 创建示例和测试数据库。应用自身的连接字符串仍通过环境变量或应用 `.env` 提供，并与 Compose 中的配置保持一致。
 
 ```sh
-# 停止并移除容器，保留数据
+# 停止并移除容器，同时清空所有开发数据库数据
 bun scripts/dev-compose.mjs down
 
-# 停止并删除所有开发数据库数据，下次启动重新初始化
-bun scripts/dev-compose.mjs down -v
+# 下次启动全新数据库，并创建示例和测试数据库
+bun scripts/dev-compose.mjs up -d --wait
+bun scripts/init-dev-db.mjs
 ```
 
 ## 注册中心与钱包
