@@ -24,7 +24,10 @@ flowchart TD
     AdminUI[Solid 管理后台] -->|HTTP| Views[issuer-service/views]
     Views --> VM[issuer-service/viewmodels]
     Views --> Sessions[RedisSessionStore]
-    Sessions --> Redis[(Redis: HTTP Session / 密钥)]
+    Sessions --> RedisStore[RedisStore: 共享连接 / 命令执行]
+    VM --> Secrets[AdminSecrets]
+    Secrets --> RedisStore
+    RedisStore --> Redis[(Redis: HTTP Session / 密钥)]
     VM --> Models[issuer-service/models]
     VM --> SDK[issuer SDK]
     VM --> Store[store: 注册 / 连接 / 迁移]
@@ -164,6 +167,8 @@ issuer-service/src/
 │   ├── setup.rs                      # 独立初始化会话、CSRF 与回执 Cookie
 │   └── middleware.rs                 # 来源、会话与安全响应头
 ├── store.rs                          # 模型注册、数据库连接与启动迁移
+├── redis_store.rs                    # 共享 Redis 连接、自动重连与命令执行
+├── admin_secrets.rs                  # 通过共享 RedisStore 加载或生成管理密钥
 ├── session_store.rs                  # Salvo Redis HTTP 会话存储适配
 ├── worker.rs                         # 持久化签发租约和后台调度
 ├── config.rs                         # 部署配置

@@ -3,6 +3,7 @@ pub mod config;
 pub mod error;
 mod key_store;
 pub mod models;
+pub mod redis_store;
 pub mod security;
 pub mod session_store;
 pub mod store;

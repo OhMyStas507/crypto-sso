@@ -6,6 +6,7 @@ use issuer_service::{
     config::{number, required},
     error::{Error, Result},
     models::ApplicationSession,
+    redis_store::RedisStore,
     security::{digest, now, token},
     session_store::RedisSessionStore,
     store::{IsolationLevel, Store},
@@ -36,7 +37,9 @@ impl App {
         Ok(Self {
             verifier: Arc::new(Verifier::new(public, origin)?),
             store: Store::connect(&required("RP_DATABASE_URL")?).await?,
-            http_sessions: RedisSessionStore::connect(&required("REDIS_URL")?).await?,
+            http_sessions: RedisSessionStore::new(
+                RedisStore::connect(&required("REDIS_URL")?).await?,
+            ),
             required: ClaimKeys::new(required_keys)?,
             policy: serde_json::from_str(&required("RP_CLAIM_POLICY_JSON")?)?,
             session_ttl: number("RP_SESSION_TTL_SECONDS")?,

@@ -13,6 +13,7 @@ use crate::{
     config::Config,
     error::{Error, Result},
     models::*,
+    redis_store::RedisStore,
     security::*,
     session_store::RedisSessionStore,
     store::{IsolationLevel, Store},
@@ -20,11 +21,12 @@ use crate::{
 use crypto_sso_issuer::Issuer;
 use std::sync::{Arc, RwLock};
 
-/// 签发服务 ViewModel，共享配置、数据库连接池与签发器，协调各业务用例。
+/// 签发服务 ViewModel，共享配置、PostgreSQL/Redis 连接与签发器，协调各业务用例。
 #[derive(Clone)]
 pub struct Application {
     pub config: Arc<Config>,
     pub store: Store,
+    pub redis: RedisStore,
     pub http_sessions: RedisSessionStore,
     pub(crate) admin_secrets: Arc<AdminSecrets>,
     issuer: Arc<RwLock<Option<Arc<Issuer>>>>,
@@ -33,12 +35,14 @@ pub struct Application {
 impl Application {
     #[tracing::instrument(skip_all)]
     pub async fn bootstrap(config: Config) -> anyhow::Result<Self> {
-        let admin_secrets = Arc::new(AdminSecrets::load(&config.redis_url).await?);
-        let http_sessions = RedisSessionStore::connect(&config.redis_url).await?;
+        let redis = RedisStore::connect(&config.redis_url).await?;
+        let admin_secrets = Arc::new(AdminSecrets::load(&redis).await?);
+        let http_sessions = RedisSessionStore::new(redis.clone());
         let store = Store::connect(&config.database_url).await?;
         let app = Self {
             config: Arc::new(config),
             store,
+            redis,
             http_sessions,
             admin_secrets,
             issuer: Arc::new(RwLock::new(None)),

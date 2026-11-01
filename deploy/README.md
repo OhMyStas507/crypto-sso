@@ -26,6 +26,8 @@ bun install --cwd scripts
 
 后端首次启动在 Redis 中以原始字节保存 `issuer_service:admin_session_secret`（64 字节）和 `issuer_service:admin_csrf_key`（32 字节），不设置过期时间；后续启动复用已有值。原子 `SET NX` 保证并发启动的实例使用相同密钥。Redis 无法连接或已有密钥格式错误时启动失败，不会降级为进程内随机密钥或覆盖损坏值。生产需为 Redis 配置持久化并保证所有中心实例使用同一个 Redis 逻辑库；清空这些键后重新启动会生成新密钥，原管理及初始化 Cookie、CSRF 令牌随之失效。
 
+Redis 连接和命令执行统一由 `redis_store.rs` 中的 `RedisStore` 管理。`Application::bootstrap` 创建一次带自动重连的共享连接，注入 `AdminSecrets` 与 `RedisSessionStore`；克隆只共享连接及重连状态，各业务模块通过 `RedisStore::query` 执行命令。RP 示例在自己的启动入口创建连接，再注入会话适配器。
+
 Salvo HTTP Session 数据也保存在同一 Redis 中，键为 `issuer_service:http_sessions:<namespace 的十六进制编码>:<session ID>`。管理员、初始化和 RP 示例分别使用 `session`、`setup`、`rp/session` 命名空间；Redis 的绝对过期时间与 Salvo Session 一致，分别由 `ADMIN_SESSION_TTL_SECONDS`、初始化的 7200 秒和 `RP_SESSION_TTL_SECONDS` 控制。新会话用 `SET NX` 创建，已有会话用 `SET XX` 更新，注销或轮换删除旧键后，并发请求不能将其重新创建；无需永久保存撤销标识。连接复用并支持断线重连。Redis Session 丢失后需重新登录或验证初始化权限。PostgreSQL 保留协议挑战与 `ApplicationSession`，不再承担 HTTP Session 存储；唯一的初始迁移基线直接创建最新表结构，不包含 HTTP 会话表。
 
 `dev-compose.mjs` 为 Docker Compose 显式设置 `COMPOSE_DISABLE_ENV_FILE=true`，可透传 `up`、`ps`、`logs`、`down` 等命令，既不加载 `.env`，也不依赖其中的值。也可在终端先设置此开关，再直接运行 `docker compose -f deploy/compose.dev.yaml ...`。
