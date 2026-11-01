@@ -22,7 +22,7 @@ bun install --cwd scripts
 
 `setup-dev.js` 使用 Node.js 内置模块创建 `.env`，生成 RP 会话和 RP CSRF 秘密；已有 `.env` 时拒绝覆盖。管理会话和管理 CSRF 密钥由后端启动时自动生成并保存在 Redis，初始化幂等及回执 HMAC 从共享会话秘密按域分离计算。管理员、服务信息和签发身份在 WebUI 向导中设置。签发公钥和 SDK 私钥备份直接保存在 PostgreSQL，不额外加密；备份及恢复需包含数据库。
 
-已有 `.env` 无需再配置 `SETUP_STORAGE_DIR` 和 `SETUP_STORAGE_KEY`，后端不再读取它们。需包含 `REDIS_URL`（开发默认为 `redis://127.0.0.1:6379/0`）；旧的 `ADMIN_SESSION_SECRET`、`ADMIN_CSRF_KEY` 也不再使用。管理员和签发身份统一通过 WebUI 创建。旧版文件中的签发密钥不会自动导入数据库，已有中心须先迁移原密钥材料，不能删除数据库后冒充原身份重新初始化。
+已有 `.env` 无需再配置 `SETUP_STORAGE_DIR` 和 `SETUP_STORAGE_KEY`，后端不再读取它们。需包含 `REDIS_URL`（开发默认为 `redis://127.0.0.1:6379/0`）；旧的 `ADMIN_SESSION_SECRET`、`ADMIN_CSRF_KEY` 也不再使用。管理员和签发身份统一通过 WebUI 创建。项目处于早期开发阶段，仅支持当前模型和全新数据库，不提供旧部署的数据或密钥迁移。
 
 后端首次启动在 Redis 中以原始字节保存 `issuer_service:admin_session_secret`（64 字节）和 `issuer_service:admin_csrf_key`（32 字节），不设置过期时间；后续启动复用已有值。原子 `SET NX` 保证并发启动的实例使用相同密钥。Redis 无法连接或已有密钥格式错误时启动失败，不会降级为进程内随机密钥或覆盖损坏值。生产需为 Redis 配置持久化并保证所有中心实例使用同一个 Redis 逻辑库；清空这些键后重新启动会生成新密钥，原管理及初始化 Cookie、CSRF 令牌随之失效。
 
@@ -96,15 +96,18 @@ bun run --cwd examples/relying-party/web build
 
 完整变量名称见根 `.env.example`。数据库迁移在启动时自动执行，无需开关或预先运行迁移命令。实现遵循 [Toasty 0.11 Schema Management](https://tokio-rs.github.io/toasty/0.11.0/guide/schema-management.html)：用官方 `ToastyCli` 从注册模型生成 SQL、快照和 `history.toml`，通过 `toasty::embed_migrations!()` 编译进程序，启动时调用 `MigrationSet::apply`。已应用版本由 Toasty 的 `__toasty_migrations` 表维护，程序没有自建迁移执行器或迁移历史表。
 
-模型按业务对象定义在 `issuer-service/src/models/`：`settings.rs`、`enrollment.rs`、`audit.rs` 和 `session.rs`，由 `mod.rs` 统一导出；`store.rs` 负责注册、连接和启动迁移。业务事务位于 `viewmodels/` 与 `worker.rs`，HTTP 适配位于 `views/`。修改模型后，在仓库根运行：
+模型按业务对象定义在 `issuer-service/src/models/`：`settings.rs`、`enrollment.rs`、`audit.rs` 和 `session.rs`，由 `mod.rs` 统一导出；`store.rs` 负责注册、连接和启动迁移。业务事务位于 `viewmodels/` 与 `worker.rs`，HTTP 适配位于 `views/`。当前只维护一份与最新模型一致的完整初始迁移及对应快照。修改模型后，在仓库根重新生成基线（先编译工具，再清理生成记录，避免编译时缺少嵌入文件）：
 
 ```powershell
-cargo run -p issuer-service --bin issuer-db -- migration generate --name describe_change
+cargo build -p issuer-service --bin issuer-db
+Remove-Item -LiteralPath issuer-service/toasty/history.toml
+Get-ChildItem -LiteralPath issuer-service/toasty/migrations, issuer-service/toasty/snapshots -File | Remove-Item
+./target/debug/issuer-db.exe migration generate --name identity_center
 ```
 
 审阅并提交 `issuer-service/toasty/migrations/`、`snapshots/` 和 `history.toml`，然后重新构建、启动服务；待执行迁移会在启动时自动应用。根 `Toasty.toml` 仅配置开发工具的产物目录，数据库连接仍由环境变量提供。示例应用与中心共用同一迁移集，分别应用到各自数据库。多实例部署先启动一个实例完成迁移，再启动其余实例。
 
-初始迁移 `0000_identity_center.sql` 由 Toasty 官方 CLI 根据当前模型生成，直接创建全部业务与初始化表。项目处于早期开发阶段，迁移基线不包含旧原型表、旧记录搬迁或兼容逻辑；开发环境使用全新数据库。后续表结构变化继续通过官方 CLI 生成增量迁移。
+初始迁移 `0000_identity_center.sql` 由 Toasty 官方 CLI 根据当前模型生成，直接创建全部业务与初始化表。项目处于早期开发阶段，迁移基线不包含旧原型表、旧记录搬迁或兼容逻辑；开发环境使用全新数据库。后续模型变化同样重新生成这一份基线，不保留历史增量迁移或旧快照；已有开发数据库使用新建空库重新初始化。
 
 业务数据使用独立的 Toasty 类型化模型和表：`IssuerMetadata`、`Settings`、`ClaimHintRevision`、`Enrollment`、`Member`、`Idempotency`、`AuditRecord`、`WebSession`、`RevokedSession`、`StoredChallenge` 和 `ApplicationSession`。CRUD 直接采用框架生成的 API：`toasty::create!(Model { ... }).exec(&mut tx)` 创建，`Model::get_by_*(&mut tx, &key)` 读取，`model.update().field(value).exec(&mut tx)` 或生成的查询更新器更新，`model.delete()` 或查询删除器删除。需要可选结果时使用 `.filter_by_*().first().exec(...)`；框架会话保存确需 upsert 时使用原生 `upsert_by_id`。没有通用 JSON 记录表的 `get/put/list/remove` 封装或手写 CRUD SQL。
 

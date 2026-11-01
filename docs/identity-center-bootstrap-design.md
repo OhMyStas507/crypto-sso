@@ -176,7 +176,7 @@ flowchart TD
 | BOOT-13 | 公共接口及导出内容检查 | 无账号、草稿、密码哈希、初始化码、私钥或内部路径泄漏；仅公开身份可下载 |
 | BOOT-14 | 初始化后完成原业务闭环 | 管理员开放服务后，钱包添加中心、审批领证与应用证明登录保持原有语义 |
 
-实现入口：`issuer-service/src/models/initialization.rs`、`viewmodels/setup.rs`、`views/setup.rs`、`key_store.rs` 和 `issuer-service-webui/src/pages/SetupPage.tsx`；迁移为 Toasty 官方 CLI 生成的 `0000_identity_center.sql`。增量迁移 `0001_store_issuer_key_in_postgres.sql` 为候选记录增加私钥备份字段，数据库直接保存公私钥，不额外加密。旧文件材料不会自动导入；已有中心必须迁移原材料后再升级运行。
+实现入口：`issuer-service/src/models/initialization.rs`、`viewmodels/setup.rs`、`views/setup.rs`、`key_store.rs` 和 `issuer-service-webui/src/pages/SetupPage.tsx`；迁移为 Toasty 官方 CLI 生成的 `0000_identity_center.sql`。初始迁移直接创建包含私钥备份字段的候选记录表，数据库直接保存公私钥，不额外加密。早期开发阶段仅保留最新完整基线及其快照，不提供旧数据库兼容、旧数据或密钥搬迁。
 
 `setup-control` 可轮换码，`--discard-expired-draft` 显式废弃过期草稿，`--cleanup-expired-keys` 回收已废弃且租约到期的候选私钥材料。清理在同一事务中标记不可启用并清空私钥；正式引用和当前草稿始终跳过。部署命令及开发配置方式见 [部署说明](../deploy/README.md)。
 

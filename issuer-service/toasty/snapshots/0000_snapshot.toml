@@ -684,6 +684,13 @@ ty = "String"
 storage_ty = "Text"
 nullable = true
 
+[[schema.tables.columns]]
+id = { table = 13, index = 7 }
+name = "secret_hex"
+ty = "String"
+storage_ty = "Text"
+nullable = true
+
 [[schema.tables.indices]]
 id = { table = 13, index = 0 }
 name = "index_initialization_keys_by_id"
