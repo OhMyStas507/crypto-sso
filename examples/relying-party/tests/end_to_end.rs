@@ -107,7 +107,6 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
         worker_interval_ms: 10,
         lease_seconds: 60,
         body_limit: 1048576,
-        rate_limit_per_minute: 10000,
     };
     // 注册验收同样从真实空库初始化开始，不预置管理员或导入签发私钥。
     let app = Application::bootstrap(config.clone()).await.unwrap();

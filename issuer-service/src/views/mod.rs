@@ -151,7 +151,7 @@ pub fn router(app: Application) -> Router {
 
     Router::new()
         .hoop(affix_state::inject(app))
-        .hoop(affix_state::inject(middleware::RateMap::default()))
+        .hoop(affix_state::inject(setup::VerificationRate::default()))
         .push(Router::with_path("health").get(health_get))
         .push(api)
 }

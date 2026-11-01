@@ -160,7 +160,7 @@ issuer-service/src/
 │   ├── public.rs                     # 钱包公开 API
 │   ├── admin.rs                      # 管理 API、Cookie 和会话适配
 │   ├── setup.rs                      # 独立初始化会话、CSRF 与回执 Cookie
-│   └── middleware.rs                 # 来源、会话、限流与安全响应头
+│   └── middleware.rs                 # 来源、会话与安全响应头
 ├── store.rs                          # 模型注册、数据库连接与启动迁移
 ├── session_store.rs                  # Salvo PostgreSQL 会话存储适配
 ├── worker.rs                         # 持久化签发租约和后台调度

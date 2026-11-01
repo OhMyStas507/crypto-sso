@@ -1,12 +1,6 @@
 use super::{app, header};
 use crate::{error::Error, models::domain::AdminSession, security::now};
 use salvo::{http::StatusCode, prelude::*, session::SessionDepotExt};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
-pub type RateMap = Arc<Mutex<HashMap<String, (u64, u32)>>>;
 
 #[handler]
 pub async fn center_ready(req: &Request, depot: &Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
@@ -81,31 +75,6 @@ pub async fn request_policy_apply(
         .insert("cache-control", "no-store".parse().unwrap());
     res.headers_mut()
         .insert("x-content-type-options", "nosniff".parse().unwrap());
-    let limit = app(depot).config.rate_limit_per_minute;
-    let allowed = {
-        let mut rates = depot
-            .get_typed::<RateMap>()
-            .unwrap()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let minute = now() / 60;
-        rates.retain(|_, (window, _)| *window == minute);
-        let ip = req
-            .remote_addr()
-            .ip()
-            .map(|ip| ip.to_string())
-            .unwrap_or_else(|| "unknown".into());
-        let entry = rates.entry(ip).or_insert((minute, 0));
-        entry.1 = entry.1.saturating_add(1);
-        entry.1 <= limit
-    };
-    if !allowed {
-        res.headers_mut()
-            .insert("retry-after", "60".parse().unwrap());
-        res.render(Error::new(429, "RATE_LIMITED", "请求过于频繁，请稍后重试"));
-        ctrl.skip_rest();
-        return;
-    }
     ctrl.call_next(req, depot, res).await;
     if res.status_code == Some(StatusCode::FORBIDDEN)
         && res

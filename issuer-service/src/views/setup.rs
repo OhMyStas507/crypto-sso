@@ -12,6 +12,9 @@ use salvo::{
     session::{SessionDepotExt, SessionStore},
 };
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+
+pub type VerificationRate = Arc<Mutex<(u64, u32)>>;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SetupGrant {
@@ -222,34 +225,19 @@ pub async fn complete(req: &mut Request, depot: &mut Depot) -> Result<Json<Setup
 }
 
 #[handler]
-pub async fn verification_rate(
-    req: &Request,
-    depot: &Depot,
-    res: &mut Response,
-    ctrl: &mut FlowCtrl,
-) {
+pub async fn verification_rate(depot: &Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
     let allowed = {
-        let mut rates = depot
-            .get_typed::<super::middleware::RateMap>()
+        let mut rate = depot
+            .get_typed::<VerificationRate>()
             .unwrap()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let minute = now() / 60;
-        let ip = req
-            .remote_addr()
-            .ip()
-            .map(|ip| ip.to_string())
-            .unwrap_or_else(|| "unknown".into());
-        [(format!("setup/{ip}"), 10), ("setup/global".into(), 100)]
-            .into_iter()
-            .all(|(bucket, limit)| {
-                let entry = rates.entry(bucket).or_insert((minute, 0));
-                if entry.0 != minute {
-                    *entry = (minute, 0);
-                }
-                entry.1 = entry.1.saturating_add(1);
-                entry.1 <= limit
-            })
+        if rate.0 != minute {
+            *rate = (minute, 0);
+        }
+        rate.1 = rate.1.saturating_add(1);
+        rate.1 <= 100
     };
     if !allowed {
         res.headers_mut()

@@ -41,7 +41,6 @@ pub struct Config {
     pub worker_interval_ms: u64,
     pub lease_seconds: u64,
     pub body_limit: usize,
-    pub rate_limit_per_minute: u32,
 }
 
 impl Config {
@@ -66,7 +65,6 @@ impl Config {
             worker_interval_ms: number("ISSUER_WORKER_INTERVAL_MS")?,
             lease_seconds: number("ISSUER_LEASE_SECONDS")?,
             body_limit: number("HTTP_BODY_LIMIT_BYTES")?,
-            rate_limit_per_minute: number("HTTP_RATE_LIMIT_PER_MINUTE")?,
         };
         ensure!(
             !config.admin_allowed_origins.is_empty(),
@@ -82,10 +80,7 @@ impl Config {
             config.session_ttl > 0 && config.worker_interval_ms > 0 && config.lease_seconds > 0,
             "timeouts must be positive"
         );
-        ensure!(
-            config.body_limit > 0 && config.rate_limit_per_minute > 0,
-            "HTTP limits must be positive"
-        );
+        ensure!(config.body_limit > 0, "HTTP body limit must be positive");
         ensure!(
             config.session_secret.len() >= 64,
             "ADMIN_SESSION_SECRET must contain at least 64 bytes"

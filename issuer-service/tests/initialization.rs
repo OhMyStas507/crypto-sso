@@ -51,7 +51,6 @@ impl Fixture {
             worker_interval_ms: 1000,
             lease_seconds: 60,
             body_limit: 1048576,
-            rate_limit_per_minute: 10000,
         };
         let app = Application::bootstrap(config.clone()).await.unwrap();
         Self {
