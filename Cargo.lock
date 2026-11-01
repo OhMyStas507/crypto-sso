@@ -3016,7 +3016,6 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 name = "issuer-service"
 version = "0.1.0"
 dependencies = [
- "aes-gcm 0.10.3",
  "anyhow",
  "argon2",
  "crypto-sso-holder",
@@ -3036,7 +3035,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "subtle",
- "tempfile",
  "toasty",
  "toasty-cli",
  "toasty-core",
@@ -3044,7 +3042,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "windows-sys 0.61.2",
  "zeroize",
 ]
 

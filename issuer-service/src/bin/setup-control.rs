@@ -1,4 +1,4 @@
-//! 受限部署终端的初始化码轮换；只输出码文件位置，不打印码或私钥。
+//! 部署终端轮换初始化码；码值由后端日志输出。
 use issuer_service::{config::Config, viewmodels::Application};
 
 #[tokio::main]
@@ -19,9 +19,7 @@ async fn main() -> anyhow::Result<()> {
         println!("已回收候选记录：{}", app.cleanup_setup_keys().await?);
         return Ok(());
     }
-    let path = app
-        .ensure_setup_code(true, args.iter().any(|a| a == "--discard-expired-draft"))
+    app.ensure_setup_code(true, args.iter().any(|a| a == "--discard-expired-draft"))
         .await?;
-    println!("一次性初始化码文件：{}", path.display());
     Ok(())
 }

@@ -50,6 +50,8 @@ pub struct InitializationKey {
     pub owner: String,
     pub lease_until: u64,
     pub public_json: Option<String>,
+    /// SDK 私钥备份的十六进制编码，不额外加密，禁止导出到 HTTP 或日志。
+    pub secret_hex: Option<String>,
 }
 
 /// 最终提交的只读回执和事务结果，凭据只保存校验摘要。

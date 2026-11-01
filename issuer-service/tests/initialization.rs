@@ -11,11 +11,28 @@ use issuer_service::{
 use reqwest::Client;
 use salvo::prelude::*;
 use serde_json::{Value, json};
+use std::{
+    io::{self, Write},
+    sync::{Arc, Mutex},
+};
+use tracing::instrument::WithSubscriber;
+
+#[derive(Clone, Default)]
+struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+impl Write for LogBuffer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 struct Fixture {
     app: Application,
     config: Config,
-    temp: tempfile::TempDir,
+    initial_code: String,
     admin: toasty::Db,
     schema: String,
 }
@@ -37,41 +54,57 @@ impl Fixture {
         isolated
             .query_pairs_mut()
             .append_pair("options", &format!("-c search_path={schema}"));
-        let temp = tempfile::tempdir().unwrap();
         let config = Config {
             bind: "127.0.0.1:0".into(),
             database_url: isolated.to_string(),
             redis_url: std::env::var("TEST_REDIS_URL").expect("需要 TEST_REDIS_URL"),
             admin_allowed_origins: vec![origin.into()],
-            setup_dir: temp.path().join("protected"),
-            setup_storage_key: [29; 32],
             session_ttl: 3600,
             secure_cookie: false,
             worker_interval_ms: 1000,
             lease_seconds: 60,
             body_limit: 1048576,
         };
-        let app = Application::bootstrap(config.clone()).await.unwrap();
+        let logs = LogBuffer::default();
+        let writer = logs.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_env_filter("warn,issuer_service=info")
+            .with_ansi(false)
+            .without_time()
+            .with_writer(move || writer.clone())
+            .finish();
+        let app = Application::bootstrap(config.clone())
+            .with_subscriber(subscriber)
+            .await
+            .unwrap();
+        let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+        let initial_code = output
+            .split("initialization_code=")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_owned();
+        assert_eq!(initial_code.len(), 64);
+        let state = Initialization::get_by_id(&mut app.store.database(), &1)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.code_hash,
+            issuer_service::security::digest(&initial_code)
+        );
+        assert!(app.ensure_setup_code(false, false).await.unwrap().is_none());
         Self {
             app,
             config,
-            temp,
+            initial_code,
             admin,
             schema,
         }
     }
     fn code(&self) -> String {
-        let entry = std::fs::read_dir(&self.config.setup_dir)
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .find(|p| {
-                p.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with("initialization-code-")
-            })
-            .unwrap();
-        std::fs::read_to_string(entry).unwrap()
+        self.initial_code.clone()
     }
     async fn ready(&self) -> SetupDraft {
         let draft_id = self.app.setup_verify(self.code()).await.unwrap();
@@ -120,7 +153,6 @@ impl Fixture {
             .exec(&mut self.admin)
             .await
             .unwrap();
-        drop(self.temp);
     }
 }
 fn service() -> SetupService {
@@ -274,8 +306,13 @@ async fn empty_database_http_setup_and_normal_login() {
             .status(),
         401
     );
-    let path = fixture.app.ensure_setup_code(true, false).await.unwrap();
-    let rotated = std::fs::read_to_string(path).unwrap();
+    let rotated = fixture
+        .app
+        .ensure_setup_code(true, false)
+        .await
+        .unwrap()
+        .unwrap()
+        .to_string();
     protection = csrf(&client, &base, "setup").await;
     assert_eq!(
         write(&client, &base, "session", &protection)
@@ -470,20 +507,38 @@ async fn key_failure_recovery_and_concurrent_completion() {
     let fixture = Fixture::new("http://localhost").await;
     let ready = fixture.ready().await;
     let key = ready.key.as_ref().unwrap();
-    let path = fixture
-        .config
-        .setup_dir
-        .join(format!("key-{}.enc", key.operation_id));
-    let encrypted = std::fs::read(&path).unwrap();
-    assert!(serde_json::from_slice::<Value>(&encrypted).is_err());
+    let mut material =
+        InitializationKey::get_by_id(&mut fixture.app.store.database(), &key.operation_id)
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(material.public_json.as_ref().unwrap()).unwrap(),
+        key.issuer_public.clone().unwrap()
+    );
+    let secret = material.secret_hex.clone().unwrap();
+    let public = material.public_json.clone().unwrap();
+    let bytes = hex::decode(&secret).unwrap();
+    let imported = crypto_sso_issuer::Issuer::import_secret(
+        &bytes,
+        &crypto_sso_issuer::wire::from_json::<crypto_sso_issuer::IssuerPublic>(public.as_bytes())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        Some(imported.issuer_id().as_str()),
+        key.issuer_id.as_deref()
+    );
     let (first_op, _) = fixture
         .app
         .setup_begin_submission(&ready.draft_id, &token())
         .await
         .unwrap();
-    let mut damaged = encrypted.clone();
-    damaged[15] ^= 1;
-    std::fs::write(&path, &damaged).unwrap();
+    material
+        .update()
+        .secret_hex(Some("invalid-secret".to_owned()))
+        .exec(&mut fixture.app.store.database())
+        .await
+        .unwrap();
     assert_eq!(
         fixture
             .app
@@ -504,8 +559,13 @@ async fn key_failure_recovery_and_concurrent_completion() {
             .unwrap()
             .is_empty()
     );
-    std::fs::write(&path, &encrypted).unwrap();
-    // 模拟文件已写入、READY 尚未提交便崩溃，重试必须恢复原指纹。
+    material
+        .update()
+        .secret_hex(Some(secret.clone()))
+        .exec(&mut fixture.app.store.database())
+        .await
+        .unwrap();
+    // 已持久化材料但操作状态需恢复时，重试必须复用原指纹。
     let mut row =
         InitializationKey::get_by_id(&mut fixture.app.store.database(), &key.operation_id)
             .await
@@ -513,7 +573,6 @@ async fn key_failure_recovery_and_concurrent_completion() {
     row.update()
         .status("FAILED")
         .lease_until(0)
-        .public_json(None::<String>)
         .exec(&mut fixture.app.store.database())
         .await
         .unwrap();
@@ -530,7 +589,12 @@ async fn key_failure_recovery_and_concurrent_completion() {
         .await
         .unwrap();
     assert_eq!(recovered.issuer_id, key.issuer_id);
-    assert_eq!(std::fs::read(&path).unwrap(), encrypted);
+    let persisted =
+        InitializationKey::get_by_id(&mut fixture.app.store.database(), &key.operation_id)
+            .await
+            .unwrap();
+    assert!(persisted.secret_hex.as_deref() == Some(secret.as_str()));
+    assert_eq!(persisted.public_json.as_deref(), Some(public.as_str()));
     let (second_op, _) = fixture
         .app
         .setup_begin_submission(&ready.draft_id, &token())
@@ -576,7 +640,14 @@ async fn key_failure_recovery_and_concurrent_completion() {
         1
     );
     assert!(fixture.app.setup_draft(&ready.draft_id).await.is_err());
-    std::fs::remove_file(&path).unwrap();
+    // 正式密钥绝不能被候选清理任务删除。
+    assert_eq!(fixture.app.cleanup_setup_keys().await.unwrap(), 0);
+    material
+        .update()
+        .secret_hex(None::<String>)
+        .exec(&mut fixture.app.store.database())
+        .await
+        .unwrap();
     assert!(
         Application::bootstrap(fixture.config.clone())
             .await
@@ -588,7 +659,7 @@ async fn key_failure_recovery_and_concurrent_completion() {
             .unwrap()
             .completed
     );
-    std::fs::write(&path, encrypted).unwrap();
+
     fixture.cleanup().await;
 }
 
@@ -624,22 +695,30 @@ async fn expired_draft_requires_explicit_discard_and_residual_data_is_fenced() {
             .code,
         "SETUP_DRAFT_EXPIRED"
     );
-    let path = fixture.app.ensure_setup_code(true, true).await.unwrap();
-    let id = fixture
+    let code = fixture
         .app
-        .setup_verify(std::fs::read_to_string(path).unwrap())
+        .ensure_setup_code(true, true)
         .await
+        .unwrap()
         .unwrap();
+    let id = fixture.app.setup_verify(code.to_string()).await.unwrap();
     assert_ne!(id, ready.draft_id);
     assert!(fixture.app.setup_draft(&id).await.unwrap().key.is_none());
+    let key_id = ready.key.unwrap().operation_id;
     assert!(
-        fixture
-            .config
-            .setup_dir
-            .join(format!("key-{}.enc", ready.key.unwrap().operation_id))
-            .exists()
+        InitializationKey::get_by_id(&mut fixture.app.store.database(), &key_id)
+            .await
+            .unwrap()
+            .secret_hex
+            .is_some()
     );
     assert_eq!(fixture.app.cleanup_setup_keys().await.unwrap(), 1);
+    let discarded = InitializationKey::get_by_id(&mut fixture.app.store.database(), &key_id)
+        .await
+        .unwrap();
+    assert_eq!(discarded.status, "DISCARDED");
+    assert!(discarded.secret_hex.is_none());
+    assert_eq!(fixture.app.cleanup_setup_keys().await.unwrap(), 0);
     // 丢失控制记录但留下业务数据时，启动必须拒绝将其认定为空中心。
     Initialization::all()
         .delete()

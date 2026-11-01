@@ -26,7 +26,6 @@ function main() {
   mkdirSync(path.join(workspace, ".dev-data"), { recursive: true });
 
   const replacements = {
-    REPLACE_WITH_SETUP_STORAGE_KEY: randomBytes(32).toString("hex"),
     REPLACE_WITH_A_DIFFERENT_64_BYTE_SECRET: randomBytes(64).toString("hex"),
     REPLACE_WITH_A_DIFFERENT_64_HEX_KEY: randomBytes(32).toString("hex"),
   };
@@ -36,7 +35,6 @@ function main() {
   for (const relative of [
     ".dev-data/issuer-public.json",
     ".dev-data/wallet",
-    ".dev-data/identity-center",
   ]) {
     const absolute = path.join(workspace, relative).replaceAll("\\", "/");
     content = content.replaceAll(`=${relative}`, () => `='${absolute}'`);
@@ -49,7 +47,7 @@ function main() {
     mode: 0o600,
   });
   console.log(
-    "已创建 .env。启动后端后，从日志所示受保护文件领取一次性初始化码，在 /admin/setup 完成配置。",
+    "已创建 .env。启动后端后，从后端日志领取一次性初始化码，在 /admin/setup 完成配置。",
   );
 }
 

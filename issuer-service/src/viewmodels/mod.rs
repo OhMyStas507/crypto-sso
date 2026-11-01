@@ -43,7 +43,6 @@ impl Application {
         if app.initialized().await? {
             app.issuer().await?;
         } else {
-            crate::key_store::prepare_directory(&app.config.setup_dir)?;
             app.ensure_setup_code(false, false).await?;
         }
         Ok(app)
@@ -135,17 +134,15 @@ impl Application {
                 "身份中心尚未初始化",
             ));
         }
-        let config = self.config.clone();
-        let issuer = tokio::task::spawn_blocking(move || {
-            let key = state
-                .draft
-                .key_id
-                .as_ref()
-                .ok_or_else(|| Error::new(503, "RECOVERY_REQUIRED", "固定签发密钥引用缺失"))?;
-            crate::key_store::load(&config, key)
-        })
-        .await
-        .map_err(|_| Error::unavailable())??;
+        let key = state
+            .draft
+            .key_id
+            .as_ref()
+            .ok_or_else(|| Error::new(503, "RECOVERY_REQUIRED", "固定签发密钥引用缺失"))?;
+        let material = InitializationKey::get_by_id(&mut self.store.database(), key).await?;
+        let issuer = tokio::task::spawn_blocking(move || crate::key_store::load(&material))
+            .await
+            .map_err(|_| Error::unavailable())??;
         let metadata = IssuerMetadata::get_by_id(&mut self.store.database(), &1).await?;
         if metadata.issuer_id != issuer.issuer_id().as_str() {
             return Err(Error::new(

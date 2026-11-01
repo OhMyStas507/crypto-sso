@@ -166,7 +166,7 @@ issuer-service/src/
 ├── worker.rs                         # 持久化签发租约和后台调度
 ├── config.rs                         # 部署配置
 ├── security.rs                       # 令牌、摘要和时间工具
-├── key_store.rs                      # 候选私钥认证加密、受限目录和不可覆盖落盘
+├── key_store.rs                      # 候选密钥生成、数据库材料读取与公私钥校验
 ├── error.rs                          # 稳定错误与 HTTP 错误映射
 ├── lib.rs                            # 业务模块导出
 ├── main.rs                           # 配置、SDK 限制、HTTP 和 worker 启动
@@ -373,9 +373,9 @@ issuer-service-webui/
 | `/admin/setup/review` | 同一向导的最终确认步骤 | 配置汇总、最终提交中及提交结果未知 | a25、a26、a31 |
 | `/admin/setup/complete` | 同一向导的完成视图 | 只读本次提交回执，进入正常管理员登录 | a27 |
 
-`App.tsx` 的 `CenterGate` 在正常管理员 Layout 之前检查中心初始化状态，与管理员会话查询分开。后端按 MVVM 分层，初始化控制、草稿、管理员、候选密钥和提交回执位于 `models/initialization.rs`，业务事务位于 `viewmodels/setup.rs`，HTTP 与会话位于 `views/setup.rs`，共享 DTO 已纳入 `identity-api`。候选密钥由 `key_store.rs` 在服务端生成并加密持久化。
+`App.tsx` 的 `CenterGate` 在正常管理员 Layout 之前检查中心初始化状态，与管理员会话查询分开。后端按 MVVM 分层，初始化控制、草稿、管理员、候选密钥和提交回执位于 `models/initialization.rs`，业务事务位于 `viewmodels/setup.rs`，HTTP 与会话位于 `views/setup.rs`，共享 DTO 已纳入 `identity-api`。候选密钥由 `key_store.rs` 在服务端生成和校验，公私钥直接持久化到 PostgreSQL。
 
-表结构迁移与业务初始化分为两个阶段。部署层提供 `SETUP_STORAGE_KEY`；空库启动后 `Application` 可无签发器运行，仅允许初始化接口。完成后按数据库固定引用加载密钥，其他实例读取相同状态。身份不匹配、密钥丢失或控制记录损坏均拒绝启动，不会重新开放向导。正式管理员保存在数据库，不读取环境中的账号密码。
+表结构迁移与业务初始化分为两个阶段。签发公钥和私钥备份直接保存于 PostgreSQL，不额外加密；一次性初始化码由后端启动日志输出。空库启动后 `Application` 可无签发器运行，仅允许初始化接口。完成后按数据库固定引用加载密钥，其他实例读取相同状态。身份不匹配、密钥丢失或控制记录损坏均拒绝启动，不会重新开放向导。正式管理员保存在数据库，不读取环境中的账号密码。
 
 迁移 `0000_identity_center.sql` 和快照由 Toasty 官方 CLI 生成。`tests/initialization.rs` 在随机 schema 中验证空库、真实 HTTP、密钥故障、过期与并发；浏览器用例调用 `scripts/check-setup-ui.mjs` 使用真实 API，并覆盖丢失最终响应后查询回执恢复。
 

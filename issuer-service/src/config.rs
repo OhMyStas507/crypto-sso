@@ -1,6 +1,6 @@
 //! 部署配置仅从进程环境读取，开发时可由仓库 .env 提供。
 use anyhow::{Context, Result, ensure};
-use std::{env, path::PathBuf};
+use std::env;
 
 pub fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("missing environment variable {name}"))
@@ -33,8 +33,6 @@ pub struct Config {
     pub database_url: String,
     pub redis_url: String,
     pub admin_allowed_origins: Vec<String>,
-    pub setup_dir: PathBuf,
-    pub setup_storage_key: [u8; 32],
     pub session_ttl: u64,
     pub secure_cookie: bool,
     pub worker_interval_ms: u64,
@@ -50,12 +48,6 @@ impl Config {
             database_url: required("DATABASE_URL")?,
             redis_url: required("REDIS_URL")?,
             admin_allowed_origins: serde_json::from_str(&required("ADMIN_ALLOWED_ORIGINS_JSON")?)?,
-            setup_dir: env::var("SETUP_STORAGE_DIR")
-                .unwrap_or_else(|_| ".dev-data/identity-center".into())
-                .into(),
-            setup_storage_key: hex::decode(required("SETUP_STORAGE_KEY")?)?
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("SETUP_STORAGE_KEY must be 32 bytes of hex"))?,
             session_ttl: number("ADMIN_SESSION_TTL_SECONDS")?,
             secure_cookie: number("COOKIE_SECURE")?,
             worker_interval_ms: number("ISSUER_WORKER_INTERVAL_MS")?,

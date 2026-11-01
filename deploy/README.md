@@ -20,9 +20,9 @@ bun install --cwd examples/relying-party/web
 bun install --cwd scripts
 ```
 
-`setup-dev.js` 使用 Node.js 内置模块创建 `.env`，生成 RP 会话、RP CSRF 及 `SETUP_STORAGE_KEY` 秘密；已有 `.env` 时拒绝覆盖。管理会话和管理 CSRF 密钥改由后端启动时自动生成并保存在 Redis。不再预置管理员或生成 issuer 私钥，组织身份在向导中填写。`SETUP_STORAGE_DIR` 指向受保护的持久目录；Windows 通过原生 DACL 仅允许当前服务账号访问，Unix 使用目录权限 `0700`。备份时同时保护此目录和分开保存的 `SETUP_STORAGE_KEY`；丢失或更换加密根密钥会导致原密钥无法读取。
+`setup-dev.js` 使用 Node.js 内置模块创建 `.env`，生成 RP 会话和 RP CSRF 秘密；已有 `.env` 时拒绝覆盖。管理会话和管理 CSRF 密钥由后端启动时自动生成并保存在 Redis，初始化幂等及回执 HMAC 从共享会话秘密按域分离计算。管理员、服务信息和签发身份在 WebUI 向导中设置。签发公钥和 SDK 私钥备份直接保存在 PostgreSQL，不额外加密；备份及恢复需包含数据库。
 
-已有 `.env` 不会自动修改。开发配置需包含 `SETUP_STORAGE_DIR`、随机生成的 64 位十六进制 `SETUP_STORAGE_KEY` 和 `REDIS_URL`（开发默认为 `redis://127.0.0.1:6379/0`）；删除旧的 `ADMIN_SESSION_SECRET`、`ADMIN_CSRF_KEY`，后端不再读取这两项。管理员和签发身份统一通过 WebUI 创建，不提供部署凭据导入或旧数据适配。
+已有 `.env` 无需再配置 `SETUP_STORAGE_DIR` 和 `SETUP_STORAGE_KEY`，后端不再读取它们。需包含 `REDIS_URL`（开发默认为 `redis://127.0.0.1:6379/0`）；旧的 `ADMIN_SESSION_SECRET`、`ADMIN_CSRF_KEY` 也不再使用。管理员和签发身份统一通过 WebUI 创建。旧版文件中的签发密钥不会自动导入数据库，已有中心须先迁移原密钥材料，不能删除数据库后冒充原身份重新初始化。
 
 后端首次启动在 Redis 中以原始字节保存 `issuer_service:admin_session_secret`（64 字节）和 `issuer_service:admin_csrf_key`（32 字节），不设置过期时间；后续启动复用已有值。原子 `SET NX` 保证并发启动的实例使用相同密钥。Redis 无法连接或已有密钥格式错误时启动失败，不会降级为进程内随机密钥或覆盖损坏值。生产需为 Redis 配置持久化并保证所有中心实例使用同一个 Redis 逻辑库；清空这些键后重新启动会生成新密钥，原管理及初始化 Cookie、CSRF 令牌随之失效。
 
@@ -43,7 +43,7 @@ cargo run -p issuer-service --bin issuer-service
 bun run --cwd issuer-service-webui dev
 ```
 
-空库访问 [管理后台](http://127.0.0.1:5173/admin/) 会进入 `/admin/setup`。从后端日志显示的 `initialization-code-*.txt` 受保护文件读取一次性初始化码，完成管理员、服务信息、组织身份与服务端密钥创建。码有效期 30 分钟且只能消费一次；码值和私钥均不写入日志。完成后使用新建账号独立登录，再开启注册及签发。
+空库访问 [管理后台](http://127.0.0.1:5173/admin/) 会进入 `/admin/setup`。从后端启动日志的 `initialization_code` 字段读取一次性初始化码，完成管理员、服务信息、组织身份与服务端密钥创建。码有效期 30 分钟且只能消费一次；数据库仅保存初始化码摘要；私钥不写入日志。未完成初始化时重启保留原码，可查首次启动日志，或运行 `setup-control` 轮换后从日志领取新码。完成后使用新建账号独立登录，再开启注册及签发。
 
 向导可下载公开身份 `issuer-public.json`。首次运行 RP 前，将它保存到 `RP_ISSUER_PUBLIC_PATH` 指定位置（默认 `.dev-data/issuer-public.json`），通过可信渠道核对指纹，然后分别启动：
 
@@ -92,7 +92,7 @@ bun run --cwd examples/relying-party/web build
 
 ## 配置与部署
 
-初始化相关模型为 `Initialization`、`Administrator`、`InitializationKey` 与 `InitializationSubmission`，与现有模型一样使用 Toasty 原生 CRUD；`0000_identity_center.sql`、快照和历史由官方 CLI 生成。初始化完成、正式账号、固定身份、服务配置和回执结果在同一事务中提交；候选私钥先写入受保护目录，数据库只保存其不可覆盖引用。
+初始化相关模型为 `Initialization`、`Administrator`、`InitializationKey` 与 `InitializationSubmission`，与现有模型一样使用 Toasty 原生 CRUD；`0000_identity_center.sql`、快照和历史由官方 CLI 生成。初始化完成、正式账号、固定身份、服务配置和回执结果在同一事务中提交；候选公钥、私钥备份和 READY 状态在同一数据库事务中保存，正式身份通过稳定的候选记录引用固定。
 
 完整变量名称见根 `.env.example`。数据库迁移在启动时自动执行，无需开关或预先运行迁移命令。实现遵循 [Toasty 0.11 Schema Management](https://tokio-rs.github.io/toasty/0.11.0/guide/schema-management.html)：用官方 `ToastyCli` 从注册模型生成 SQL、快照和 `history.toml`，通过 `toasty::embed_migrations!()` 编译进程序，启动时调用 `MigrationSet::apply`。已应用版本由 Toasty 的 `__toasty_migrations` 表维护，程序没有自建迁移执行器或迁移历史表。
 
@@ -114,7 +114,7 @@ cargo run -p issuer-service --bin issuer-db -- migration generate --name describ
 
 `Serializable` 隔离保护状态/修订检查、成员名额、幂等记录、签发租约与结果，以及挑战消费和应用会话的原子性。PostgreSQL 拒绝并发序列化冲突时，业务接口返回 `409 REVISION_CONFLICT`；刷新后可用原幂等键重试整个用例，不单独重试某条语句。worker 领取租约遇到此冲突时跳过本轮，由下一次 tick 重试；结果提交失败后仍按持久化租约恢复。结果事务通过 Toasty ORM 写入已检查的同一设置行，防止旧快照中的“允许签发”在关闭操作已提交后继续提交结果。Salvo 会话适配器也用原生事务原子保存撤销标记和会话删除，阻止迟到请求恢复已撤销会话；框架接收并处理适配器错误。
 
-管理列表使用 Toasty 原生只读 `RepeatableRead` 事务，保证一次响应中的多次查询使用同一快照。单条独立读取或写入直接调用 Toasty Executor。查询直接访问相应模型，详情按主键或模型关联加载，会话按 namespace 索引查询。列表排序、业务搜索和分页当前仍在内存完成；扩大数据量前应增加检索列、索引及数据库分页。密码学运算在数据库事务之外的阻塞工作线程执行。
+管理列表使用 Toasty 原生只读 `RepeatableRead` 事务，保证一次响应中的多次查询使用同一快照。单条独立读取或写入直接调用 Toasty Executor。查询直接访问相应模型，详情按主键或模型关联加载，会话按 namespace 索引查询。列表排序、业务搜索和分页当前仍在内存完成；扩大数据量前应增加检索列、索引及数据库分页。密码学运算使用阻塞工作线程；最终初始化在事务快照内读取密钥并校验身份。
 
 所有运行时 CRUD 直接访问当前类型化模型。没有旧 JSON 记录表、迁移归档表或旧导入路径适配层。
 
@@ -124,7 +124,7 @@ Cookie、会话签名、加载、轮换、有效期与退出由 Salvo `SessionHa
 
 日志统一使用 Rust `tracing`，三个应用及迁移 CLI 在读取 `.env` 后通过共享 `crypto-sso-telemetry` 初始化 subscriber，输出到标准错误。`RUST_LOG` 为必填环境变量，示例配置为 `warn,salvo_extra::logging=info,issuer_service=info,crypto_sso_relying_party=info,wallet_lib=info`；已有 `.env` 需补上此项。临时排查可把单个应用 target 改为 `debug` 或 `trace`，进程环境优先于 `.env`。Docker 基础设施仍仅使用 Compose 中的配置。
 
-`info` 记录 API 访问、启动/停止、迁移完成及成功提交；`warn` 记录请求拒绝、租约恢复及钱包同步重试；`error` 记录数据库、worker 和加密存储失败；`debug` 记录预期状态冲突及租约竞争；`trace` 用于空闲轮询等细节。API 失败日志与响应共用 `trace_id`。应用 span 均跳过函数参数，事件不包含连接串、密码、Cookie、Claims、原始 SDK 消息、证明或钱包目录；除 Salvo 访问日志 target 外，第三方库保持 `warn`，避免打开其 SQL/HTTP 调试日志。数据库原始错误不直接写入日志。
+`info` 记录 API 访问、启动/停止、迁移完成及成功提交；`warn` 记录请求拒绝、租约恢复及钱包同步重试；`error` 记录数据库、worker 和加密存储失败；`debug` 记录预期状态冲突及租约竞争；`trace` 用于空闲轮询等细节。API 失败日志与响应共用 `trace_id`。应用 span 均跳过函数参数，事件不包含连接串、密码、Cookie、Claims、原始 SDK 消息、证明或钱包目录；除 Salvo 访问日志 target 外，第三方库保持 `warn`，避免打开其 SQL/HTTP 调试日志。数据库原始错误不直接写入日志。首次初始化及显式轮换时会在 `issuer_service=info` 日志中输出一次性初始化码；该日志应仅供部署维护者读取。
 
 两个 Rust API 服务均在 `Service` 层挂载 Salvo 原生 `logging::Logger`。每个请求完成后产生一条 `info` 访问日志，包含 HTTP 方法、路径、协议版本、远端地址、状态码和耗时；路径不含查询字符串，也不记录请求头或请求体。访问日志在权限、来源、限流和 CSRF 中间件之外执行，因此早期拒绝以及未匹配路由的 404/405 也能记录。业务告警和错误会附带当前请求 span 的方法、路径信息。
 

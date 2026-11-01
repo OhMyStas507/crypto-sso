@@ -13,7 +13,6 @@ use crypto_sso_issuer::{IssuerPublic, wire};
 use hmac::{Hmac, Mac};
 use rand::rngs::OsRng;
 use sha2::Sha256;
-use std::path::PathBuf;
 use zeroize::Zeroizing;
 
 fn finished() -> Error {
@@ -151,6 +150,7 @@ impl Application {
             if key.draft_id == state.draft_id
                 || state.draft.key_id.as_ref() == Some(&key.id)
                 || key.lease_until > now()
+                || key.status == "DISCARDED"
             {
                 continue;
             }
@@ -159,6 +159,7 @@ impl Application {
                 .status("DISCARDED")
                 .owner("")
                 .lease_until(0)
+                .secret_hex(None::<String>)
                 .exec(&mut tx)
                 .await?;
             ids.push(id);
@@ -167,17 +168,15 @@ impl Application {
         let rev = state.revision;
         state.update().revision(rev).exec(&mut tx).await?;
         tx.commit().await?;
-        for id in &ids {
-            key_store::remove_candidate(&self.config, id)?;
-        }
         Ok(ids.len())
     }
 
     /// 域分离的 HMAC 同时用于秘密请求幂等和不可猜测的只读回执。
     pub fn setup_mac(&self, domain: &str, value: &[u8]) -> Result<String> {
-        let key = &self.config.setup_storage_key;
+        let key = &self.admin_secrets.session_secret;
         let mut mac =
             <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| Error::unavailable())?;
+        mac.update(b"crypto-sso/setup/v1\0");
         mac.update(domain.as_bytes());
         mac.update(&[0]);
         mac.update(value);
@@ -197,8 +196,12 @@ impl Application {
         })
     }
 
-    /// 码文件先持久化，再提交摘要；文件名含摘要前缀，失败不会覆盖仍有效的旧码。
-    pub async fn ensure_setup_code(&self, rotate: bool, discard_expired: bool) -> Result<PathBuf> {
+    /// 摘要成功提交后才打印一次性码；重启保留原码，显式轮换可恢复草稿。
+    pub async fn ensure_setup_code(
+        &self,
+        rotate: bool,
+        discard_expired: bool,
+    ) -> Result<Option<Zeroizing<String>>> {
         let mut db = self.store.database();
         let mut tx = db
             .transaction_builder()
@@ -210,9 +213,10 @@ impl Application {
             return Err(finished());
         }
         if !rotate && !state.code_hash.is_empty() {
-            let path = self.code_path(&state.code_hash);
-            tracing::info!(path = %path.display(), "initialization code file; use setup-control to rotate an expired or consumed code");
-            return Ok(path);
+            tracing::info!(
+                "initialization pending; retrieve the code from the first startup log or run setup-control to rotate it"
+            );
+            return Ok(None);
         }
         if discard_expired {
             if state.draft_expires_at > now() {
@@ -235,8 +239,6 @@ impl Application {
         }
         let code = Zeroizing::new(token());
         let hash = digest(&code);
-        let path = self.code_path(&hash);
-        key_store::write_exclusive(&path, code.as_bytes()).map_err(|_| Error::unavailable())?;
         let draft = state.draft.0.clone();
         let draft_id = state.draft_id.clone();
         let rev = state.revision;
@@ -253,14 +255,8 @@ impl Application {
             .exec(&mut tx)
             .await?;
         tx.commit().await?;
-        tracing::info!(path = %path.display(), "initialization code file created; code is never logged");
-        Ok(path)
-    }
-
-    fn code_path(&self, hash: &str) -> PathBuf {
-        self.config
-            .setup_dir
-            .join(format!("initialization-code-{}.txt", &hash[..16]))
+        tracing::info!(initialization_code = %code.as_str(), expires_in_seconds = 1800, "一次性初始化码：请在 /admin/setup 输入，30 分钟内有效且只能使用一次");
+        Ok(Some(code))
     }
 
     pub async fn setup_verify(&self, code: String) -> Result<String> {
@@ -286,10 +282,8 @@ impl Application {
             ));
         }
         let id = state.draft_id.clone();
-        let path = self.code_path(&state.code_hash);
         state.update().code_used(true).exec(&mut tx).await?;
         tx.commit().await?;
-        let _ = std::fs::remove_file(path);
         Ok(id)
     }
 
@@ -459,7 +453,7 @@ impl Application {
         Ok(view)
     }
 
-    /// 操作号同时决定不可覆盖的文件名；过期租约接管时优先恢复原文件。
+    /// 操作号固定数据库密钥记录；过期租约接管时复用已保存的材料。
     pub async fn setup_generate(
         &self,
         draft_id: &str,
@@ -492,6 +486,7 @@ impl Application {
             ));
         }
         let owner = token();
+        let mut stored = None;
         if let Some(mut candidate) = InitializationKey::filter_by_id(key.to_owned())
             .first()
             .exec(&mut tx)
@@ -510,6 +505,7 @@ impl Application {
                 .lease_until(now() + 120)
                 .exec(&mut tx)
                 .await?;
+            stored = Some(candidate);
         } else {
             require_draft(&state, draft_id, Some(input.expected_revision))?;
             if state.draft.password_hash.is_empty() || state.draft.service.is_none() {
@@ -522,7 +518,8 @@ impl Application {
                 status: "PENDING",
                 owner: owner.clone(),
                 lease_until: now() + 120,
-                public_json: None::<String>
+                public_json: None::<String>,
+                secret_hex: None::<String>
             })
             .exec(&mut tx)
             .await?;
@@ -538,14 +535,18 @@ impl Application {
                 .await?;
         }
         tx.commit().await?;
-        let config = self.config.clone();
-        let id = key.to_owned();
         let organization = input.organization;
         let result = tokio::task::spawn_blocking(move || {
-            key_store::generate_or_load(&config, &id, &organization).and_then(|issuer| {
-                String::from_utf8(wire::to_json(issuer.public()).map_err(|_| Error::unavailable())?)
-                    .map_err(|_| Error::unavailable())
-            })
+            if let Some(row) = stored
+                && (row.public_json.is_some() || row.secret_hex.is_some())
+            {
+                key_store::load(&row)?;
+                return Ok((
+                    row.public_json.unwrap(),
+                    Zeroizing::new(row.secret_hex.unwrap()),
+                ));
+            }
+            key_store::generate(&organization)
         })
         .await
         .map_err(|_| Error::unavailable())?;
@@ -568,13 +569,26 @@ impl Application {
                 "密钥尚未安全保存，请检查存储并重试原操作",
             )
         });
-        candidate
-            .update()
-            .status(if result.is_ok() { "READY" } else { "FAILED" })
-            .lease_until(0)
-            .public_json(result.ok())
-            .exec(&mut tx)
-            .await?;
+        match result {
+            Ok((public, secret)) => {
+                candidate
+                    .update()
+                    .status("READY")
+                    .lease_until(0)
+                    .public_json(Some(public))
+                    .secret_hex(Some(secret.to_string()))
+                    .exec(&mut tx)
+                    .await?;
+            }
+            Err(_) => {
+                candidate
+                    .update()
+                    .status("FAILED")
+                    .lease_until(0)
+                    .exec(&mut tx)
+                    .await?;
+            }
+        }
         let view = key_view(candidate).await?;
         tx.commit().await?;
         if let Some(error) = error {
@@ -668,14 +682,6 @@ impl Application {
             return Err(validation());
         }
         let hash = self.setup_mac("complete", &serde_json::to_vec(&input)?)?;
-        let config = self.config.clone();
-        let key = input.key_id.clone();
-        let issuer = tokio::task::spawn_blocking(move || key_store::load(&config, &key))
-            .await
-            .map_err(|_| Error::unavailable())??;
-        let public =
-            String::from_utf8(wire::to_json(issuer.public()).map_err(|_| Error::unavailable())?)
-                .map_err(|_| Error::unavailable())?;
         let mut db = self.store.database();
         let mut tx = db
             .transaction_builder()
@@ -702,6 +708,14 @@ impl Application {
             return Err(validation());
         }
         let candidate = InitializationKey::get_by_id(&mut tx, &input.key_id).await?;
+        let (issuer, candidate) = tokio::task::spawn_blocking(move || {
+            key_store::load(&candidate).map(|issuer| (issuer, candidate))
+        })
+        .await
+        .map_err(|_| Error::unavailable())??;
+        let public =
+            String::from_utf8(wire::to_json(issuer.public()).map_err(|_| Error::unavailable())?)
+                .map_err(|_| Error::unavailable())?;
         if candidate.status != "READY"
             || candidate.draft_id != draft_id
             || candidate.public_json.as_deref() != Some(&public)

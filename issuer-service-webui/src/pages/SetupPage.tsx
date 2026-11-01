@@ -574,7 +574,7 @@ export function SetupPage() {
                     <Section title="验证部署权限">
                       <Field
                         label="一次性初始化码"
-                        hint="从部署主机的受保护文件获取，有效期 30 分钟。"
+                        hint="从后端启动日志获取，有效期 30 分钟。"
                       >
                         <input
                           class="input"
@@ -750,7 +750,7 @@ export function SetupPage() {
                           <div>
                             <strong>在服务端创建新密钥</strong>
                             <p class="hint">
-                              使用安全随机源生成，并写入受保护密钥存储。
+                              使用安全随机源生成，并保存到 PostgreSQL 数据库。
                             </p>
                           </div>
                         </div>
@@ -814,7 +814,7 @@ export function SetupPage() {
                     </div>
                   </Section>
                   <p class="hint">
-                    请通过可信渠道分发完整指纹。运维应备份受保护密钥存储及其解密材料。
+                    请通过可信渠道分发完整指纹。运维应备份包含签发密钥的 PostgreSQL 数据库。
                   </p>
                   <div class="form-footer">
                     {back("service")}
