@@ -64,6 +64,9 @@ async fn lease(app: &Application) -> Result<Option<Enrollment>> {
 
 #[tracing::instrument(skip_all)]
 pub async fn tick(app: &Application) -> Result<bool> {
+    if !app.initialized().await? {
+        return Ok(false);
+    }
     let leased = match lease(app).await {
         Ok(task) => task,
         // Another worker won the serializable transaction. Try again next tick.
@@ -78,7 +81,7 @@ pub async fn tick(app: &Application) -> Result<bool> {
         return Ok(false);
     };
     tracing::debug!("signing lease committed");
-    let issuer = app.issuer.clone();
+    let issuer = app.issuer().await?;
     let raw = task.raw_request.clone();
     let approved = task
         .decision

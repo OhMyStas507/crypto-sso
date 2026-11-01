@@ -18,7 +18,7 @@ impl Application {
         let enrollments = list_enrollments(&mut tx).await?;
         let result = OverviewView {
             settings: Settings::get_by_id(&mut tx, &1).await?.into(),
-            issuer_id: self.issuer.issuer_id().as_str().into(),
+            issuer_id: self.issuer().await?.issuer_id().as_str().into(),
             key_available: true,
             pending: enrollments
                 .iter()

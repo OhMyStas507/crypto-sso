@@ -28,7 +28,8 @@ impl Application {
     ) -> Result<AdminSession> {
         let username = input.username;
         let password = zeroize::Zeroizing::new(input.password);
-        let hash = self.config.admin_password_hash.clone();
+        let admin = crate::models::Administrator::get_by_id(&mut self.store.database(), &1).await?;
+        let hash = admin.password_hash;
         let valid = tokio::task::spawn_blocking(move || {
             PasswordHash::new(&hash).is_ok_and(|h| {
                 Argon2::default()
@@ -38,7 +39,7 @@ impl Application {
         })
         .await
         .unwrap_or(false);
-        if !valid || !equal(&username, &self.config.admin_username) {
+        if !valid || !equal(&username, &admin.username) {
             return Err(Error::new(401, "INVALID_CREDENTIALS", "账号或密码错误"));
         }
         Ok(AdminSession {

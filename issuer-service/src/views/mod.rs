@@ -2,6 +2,7 @@
 mod admin;
 mod middleware;
 mod public;
+mod setup;
 
 use crate::{
     error::{Error, Result},
@@ -39,6 +40,37 @@ pub fn router(app: Application) -> Router {
     .expect("validated session configuration");
     let csrf =
         salvo_csrf::hmac_session_csrf(app.config.csrf_key, HeaderFinder::new("x-csrf-token"));
+    let setup_sessions = SessionHandler::builder(
+        PgSessionStore {
+            store: app.store.clone(),
+            namespace: "setup".into(),
+        },
+        app.config.session_secret.as_bytes(),
+    )
+    .cookie_name("crypto_sso_setup")
+    .cookie_path("/api/v1/setup")
+    .session_ttl(Some(std::time::Duration::from_secs(7200)))
+    .same_site_policy(SameSite::Strict)
+    .secure_cookie(app.config.secure_cookie)
+    .build()
+    .expect("validated setup session configuration");
+    let setup_csrf =
+        salvo_csrf::hmac_session_csrf(app.config.csrf_key, HeaderFinder::new("x-csrf-token"));
+    let setup_protected = Router::new()
+        .hoop(setup::require_session)
+        .push(
+            Router::with_path("draft")
+                .get(setup::draft)
+                .push(Router::with_path("admin").put(setup::admin))
+                .push(Router::with_path("service").put(setup::service)),
+        )
+        .push(
+            Router::with_path("key-generation")
+                .post(setup::generate)
+                .push(Router::with_path("{operation_id}").get(setup::key)),
+        )
+        .push(Router::with_path("operations").post(setup::begin))
+        .push(Router::with_path("complete").post(setup::complete));
 
     let protected = Router::new()
         .hoop(middleware::admin_session_require)
@@ -78,6 +110,23 @@ pub fn router(app: Application) -> Router {
 
     let api = Router::with_path("api/v1")
         .hoop(middleware::request_policy_apply)
+        .hoop(middleware::center_ready)
+        .push(
+            Router::with_path("setup")
+                .hoop(setup_sessions)
+                .hoop(middleware::origin_check)
+                .hoop(setup_csrf)
+                .push(Router::with_path("status").get(setup::status))
+                .push(Router::with_path("csrf").get(admin::csrf_token_get))
+                .push(
+                    Router::with_path("session")
+                        .hoop(setup::verification_rate)
+                        .post(setup::verify)
+                        .delete(setup::logout),
+                )
+                .push(Router::with_path("operations/{operation_id}").get(setup::operation))
+                .push(setup_protected),
+        )
         .push(Router::with_path("service-info").get(public::service_info_get))
         .push(Router::with_path("claim-hints").get(public::claim_hints_get))
         .push(

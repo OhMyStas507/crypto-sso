@@ -207,7 +207,8 @@ try {
     const url = new URL(route.request().url()),
       resource = url.pathname.replace("/api/v1/admin/", "");
     let value;
-    if (url.pathname.endsWith("/service-info")) value = info;
+    if (url.pathname === "/api/v1/setup/status") value = { state: "initialized" };
+    else if (url.pathname.endsWith("/service-info")) value = info;
     else if (resource === "session")
       value = {
         username: "admin@example.org",

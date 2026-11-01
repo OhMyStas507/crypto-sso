@@ -1,0 +1,207 @@
+/* 首次初始化沿用登录页与共享表单，不显示普通后台的管理员导航。 */
+.setup {
+  min-height: 100vh;
+  height: auto;
+}
+.setup-label {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.setup-main {
+  width: min(960px, calc(100% - 48px));
+  margin: 36px auto 40px;
+  flex: 1;
+}
+.setup-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 37px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.setup-progress > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.setup-progress .active {
+  color: var(--text);
+  font-weight: 550;
+}
+.setup-progress .active .step-num {
+  border-color: #b4afd9;
+  color: var(--accent);
+}
+.setup-progress .connector {
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+}
+.setup-progress .bi {
+  font-size: 11px;
+}
+.setup-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 27px;
+  gap: 12px;
+}
+.setup-heading h1 {
+  font-size: 23px;
+  font-weight: 620;
+  letter-spacing: -0.65px;
+  margin: 0;
+}
+.setup-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 640px) minmax(0, 250px);
+  gap: 70px;
+}
+.setup-form {
+  min-width: 0;
+}
+.setup-aside {
+  border-left: 1px solid var(--line);
+  padding-left: 23px;
+  color: var(--secondary);
+}
+.setup-aside .section-title {
+  color: var(--text);
+}
+.setup-form .section {
+  margin-bottom: 23px;
+}
+.setup-form .field {
+  margin-bottom: 17px;
+}
+.setup-form p,
+.setup-aside p {
+  font-size: 12px;
+  line-height: 23px;
+  margin: 0 0 15px;
+}
+.setup-form .section-title .btn {
+  height: 25px;
+  font-size: 11px;
+}
+.setup-choice {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.setup-choice p {
+  margin: 6px 0 0;
+}
+.setup-next {
+  font-size: 12px;
+  line-height: 29px;
+  color: var(--secondary);
+  padding-left: 20px;
+  margin: 0;
+}
+.setup-kv {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  margin: 0 0 16px;
+  font-size: 12px;
+}
+.setup-kv > dt,
+.setup-kv > dd {
+  margin: 0;
+  min-height: 36px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.setup-kv dt {
+  color: var(--muted);
+}
+.setup-aside .setup-kv {
+  display: block;
+}
+.setup-aside .setup-kv dt {
+  border: 0;
+  padding-bottom: 0;
+}
+.setup-aside .setup-kv dd {
+  padding-top: 2px;
+}
+.setup-password {
+  position: relative;
+}
+.setup-password .input {
+  padding-right: 40px;
+}
+.setup-password .icon-button {
+  position: absolute;
+  right: 5px;
+  top: 4px;
+}
+.setup .auth-foot {
+  margin-top: auto;
+}
+.setup .form-footer {
+  margin-top: 23px;
+}
+.setup .section-title .meta {
+  margin-left: auto;
+}
+@media (max-width: 850px) {
+  .setup-columns {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+  .setup-aside {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 20px 0 0;
+  }
+  .setup-aside .setup-kv {
+    display: grid;
+  }
+  .setup-progress {
+    gap: 8px;
+  }
+  .setup-progress .connector {
+    min-width: 6px;
+  }
+}
+@media (max-width: 540px) {
+  .setup-progress {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .setup-progress .connector {
+    display: none;
+  }
+  .setup-heading {
+    align-items: start;
+  }
+  .setup-heading h1 {
+    font-size: 21px;
+  }
+  .setup-main {
+    margin-top: 20px;
+  }
+  .setup .auth-brand {
+    padding: 22px 24px;
+  }
+  .setup .auth-foot {
+    padding: 20px 24px;
+  }
+  .setup-kv {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+}

@@ -22,8 +22,7 @@ hex.workspace = true
 
 [dev-dependencies]
 wallet = { path = "../../wallet/src-tauri" }
-crypto-sso-issuer = { path = "../../sdk/issuer" }
 crypto-sso-holder = { path = "../../sdk/holder" }
 tempfile.workspace = true
-argon2 = "0.5"
+url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls"] }

@@ -56,14 +56,15 @@ impl Application {
     }
 
     pub async fn info(&self) -> Result<ServiceInfo> {
+        let issuer = self.issuer().await?;
         let s = Settings::get_by_id(&mut self.store.database(), &1).await?;
         let limits = crypto_sso_issuer::claims_limits();
         Ok(ServiceInfo {
             api_version: "v1".into(),
-            issuer_id: self.issuer.issuer_id().as_str().into(),
+            issuer_id: issuer.issuer_id().as_str().into(),
             issuer_public: serde_json::value::RawValue::from_string(
                 String::from_utf8(
-                    wire::to_json(self.issuer.public()).map_err(|_| Error::unavailable())?,
+                    wire::to_json(issuer.public()).map_err(|_| Error::unavailable())?,
                 )
                 .map_err(|_| Error::unavailable())?,
             )?,
@@ -92,7 +93,7 @@ impl Application {
         }
         let request: EnrollmentRequest = wire::from_json(input.enrollment_request.get().as_bytes())
             .map_err(|_| Error::invalid())?;
-        if request.issuer_id() != self.issuer.issuer_id() {
+        if request.issuer_id() != self.issuer().await?.issuer_id() {
             return Err(Error::new(400, "ISSUER_MISMATCH", "申请的中心身份不匹配"));
         }
         let request_id = request.request_id().as_str().to_owned();

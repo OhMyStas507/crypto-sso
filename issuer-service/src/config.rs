@@ -1,4 +1,4 @@
-//! Deployment configuration is read only from the process environment (.env in development).
+//! 部署配置仅从进程环境读取，开发时可由仓库 .env 提供。
 use anyhow::{Context, Result, ensure};
 use std::{env, path::PathBuf};
 
@@ -31,12 +31,9 @@ pub fn canonical_origin(value: &str) -> Result<String> {
 pub struct Config {
     pub bind: String,
     pub database_url: String,
-    pub public_origin: String,
     pub admin_allowed_origins: Vec<String>,
-    pub issuer_secret_path: PathBuf,
-    pub issuer_public_path: PathBuf,
-    pub admin_username: String,
-    pub admin_password_hash: String,
+    pub setup_dir: PathBuf,
+    pub setup_storage_key: [u8; 32],
     pub session_ttl: u64,
     pub session_secret: String,
     pub csrf_key: [u8; 32],
@@ -53,12 +50,13 @@ impl Config {
         let config = Self {
             bind: required("ISSUER_BIND")?,
             database_url: required("DATABASE_URL")?,
-            public_origin: required("ISSUER_PUBLIC_ORIGIN")?,
             admin_allowed_origins: serde_json::from_str(&required("ADMIN_ALLOWED_ORIGINS_JSON")?)?,
-            issuer_secret_path: required("ISSUER_SECRET_PATH")?.into(),
-            issuer_public_path: required("ISSUER_PUBLIC_PATH")?.into(),
-            admin_username: required("ADMIN_USERNAME")?,
-            admin_password_hash: required("ADMIN_PASSWORD_HASH")?,
+            setup_dir: env::var("SETUP_STORAGE_DIR")
+                .unwrap_or_else(|_| ".dev-data/identity-center".into())
+                .into(),
+            setup_storage_key: hex::decode(required("SETUP_STORAGE_KEY")?)?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("SETUP_STORAGE_KEY must be 32 bytes of hex"))?,
             session_ttl: number("ADMIN_SESSION_TTL_SECONDS")?,
             session_secret: required("ADMIN_SESSION_SECRET")?,
             csrf_key: hex::decode(required("ADMIN_CSRF_KEY")?)?
@@ -70,10 +68,6 @@ impl Config {
             body_limit: number("HTTP_BODY_LIMIT_BYTES")?,
             rate_limit_per_minute: number("HTTP_RATE_LIMIT_PER_MINUTE")?,
         };
-        ensure!(
-            canonical_origin(&config.public_origin)? == config.public_origin,
-            "ISSUER_PUBLIC_ORIGIN must be canonical"
-        );
         ensure!(
             !config.admin_allowed_origins.is_empty(),
             "ADMIN_ALLOWED_ORIGINS_JSON cannot be empty"
@@ -96,8 +90,6 @@ impl Config {
             config.session_secret.len() >= 64,
             "ADMIN_SESSION_SECRET must contain at least 64 bytes"
         );
-        argon2::PasswordHash::new(&config.admin_password_hash)
-            .map_err(|_| anyhow::anyhow!("invalid ADMIN_PASSWORD_HASH"))?;
         Ok(config)
     }
 }

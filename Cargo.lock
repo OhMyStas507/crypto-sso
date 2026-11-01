@@ -1324,10 +1324,8 @@ name = "crypto-sso-relying-party"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "argon2",
  "crypto-sso-holder",
  "crypto-sso-identity-api",
- "crypto-sso-issuer",
  "crypto-sso-telemetry",
  "crypto-sso-verifier",
  "dotenvy",
@@ -1343,6 +1341,7 @@ dependencies = [
  "toasty",
  "tokio",
  "tracing",
+ "url",
  "wallet",
 ]
 
@@ -3013,6 +3012,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 name = "issuer-service"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm 0.10.3",
  "anyhow",
  "argon2",
  "crypto-sso-holder",
@@ -3021,7 +3021,9 @@ dependencies = [
  "crypto-sso-telemetry",
  "dotenvy",
  "hex",
+ "hmac 0.12.1",
  "rand 0.8.8",
+ "reqwest 0.12.28",
  "salvo",
  "salvo-csrf",
  "saysion",
@@ -3037,6 +3039,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

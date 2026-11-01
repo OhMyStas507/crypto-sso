@@ -1,26 +1,20 @@
 //! Real PostgreSQL, Salvo HTTP, encrypted wallet and verifier acceptance tests.
 //! Run only against a dedicated *_test database: cargo test -p crypto-sso-relying-party --test end_to_end -- --ignored
-use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use crypto_sso_holder::{ClaimKeys, Claims, Holder, Origin, wire};
 use crypto_sso_identity_api::{
     ClaimHint, EnrollmentStatus, EnrollmentView, Page, ReviewDecision, SubmitEnrollment,
 };
-use crypto_sso_issuer::Issuer;
 use crypto_sso_relying_party::{App as RelyingParty, StoredChallenge};
 use issuer_service::viewmodels::contracts::{
     AdminEnrollmentView, AuditEventView, ClaimHintsResponse, MemberDetailView, MemberView,
     OverviewView, ReviewAction,
 };
 use issuer_service::{
-    application::Application,
     config::Config,
-    domain::{Enrollment, Member},
-    models::{
-        ApplicationSession, AuditRecord, ClaimHintRevision, Idempotency, IssuerMetadata,
-        RevokedSession, Settings, WebSession,
-    },
+    models::{Enrollment, Idempotency, Member, Settings},
     security::{now, token},
-    store::Store,
+    store::{Store, connect_database},
+    viewmodels::Application,
     worker,
 };
 use rand::rngs::OsRng;
@@ -79,63 +73,33 @@ async fn http_get<T: serde::de::DeserializeOwned>(client: &Client, url: &str) ->
 #[ignore = "requires a dedicated PostgreSQL TEST_DATABASE_URL and Windows DPAPI"]
 async fn registration_approval_wallet_recovery_and_offline_login() {
     let _ = dotenvy::dotenv();
-    let database = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is required");
-    assert!(
-        database.split('?').next().unwrap().ends_with("_test"),
-        "tests may only clear a dedicated *_test database"
-    );
+    let root_database =
+        url::Url::parse(&std::env::var("TEST_DATABASE_URL").expect("需要 TEST_DATABASE_URL"))
+            .unwrap();
+    assert!(root_database.path().ends_with("_test"));
+    assert!(!root_database.query_pairs().any(|(key, _)| key == "dbname"));
+    let mut admin_db = connect_database(root_database.as_str()).await.unwrap();
+    let schema = format!("end_to_end_test_{}", &token()[..16]);
+    toasty::sql::statement(format!("CREATE SCHEMA {schema}"))
+        .exec(&mut admin_db)
+        .await
+        .unwrap();
+    let mut isolated = root_database.clone();
+    isolated
+        .query_pairs_mut()
+        .append_pair("options", &format!("-c search_path={schema}"));
+    let database = isolated.to_string();
     let temporary = tempfile::tempdir().unwrap();
-    let issuer = Issuer::generate("Integration identity center", &mut OsRng).unwrap();
-    let secret_path = temporary.path().join("issuer-secret.json");
-    let public_path = temporary.path().join("issuer-public.json");
-    std::fs::write(
-        &secret_path,
-        issuer.export_secret().unwrap().expose_secret(),
-    )
-    .unwrap();
-    std::fs::write(&public_path, wire::to_json(issuer.public()).unwrap()).unwrap();
     let store = Store::connect(&database).await.unwrap();
-    // Only this explicitly fenced test database is cleared. Delete dependents
-    // before their referenced enrollments; use Toasty builders for every table.
-    let mut db = store.database();
-    let mut tx = db.transaction().await.unwrap();
-    Member::all().delete().exec(&mut tx).await.unwrap();
-    Enrollment::all().delete().exec(&mut tx).await.unwrap();
-    Settings::all().delete().exec(&mut tx).await.unwrap();
-    ClaimHintRevision::all()
-        .delete()
-        .exec(&mut tx)
-        .await
-        .unwrap();
-    IssuerMetadata::all().delete().exec(&mut tx).await.unwrap();
-    Idempotency::all().delete().exec(&mut tx).await.unwrap();
-    AuditRecord::all().delete().exec(&mut tx).await.unwrap();
-    WebSession::all().delete().exec(&mut tx).await.unwrap();
-    RevokedSession::all().delete().exec(&mut tx).await.unwrap();
-    ApplicationSession::all()
-        .delete()
-        .exec(&mut tx)
-        .await
-        .unwrap();
-    StoredChallenge::all().delete().exec(&mut tx).await.unwrap();
-    tx.commit().await.unwrap();
-
     let acceptor = TcpListener::new("127.0.0.1:0").bind().await;
     let base = format!("http://{}", acceptor.inner().local_addr().unwrap());
     let password = token();
-    let hash = Argon2::default()
-        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
-        .unwrap()
-        .to_string();
     let config = Config {
         bind: base.trim_start_matches("http://").into(),
         database_url: database.clone(),
-        public_origin: base.clone(),
         admin_allowed_origins: vec![base.clone()],
-        issuer_secret_path: secret_path,
-        issuer_public_path: public_path,
-        admin_username: "admin".into(),
-        admin_password_hash: hash,
+        setup_dir: temporary.path().join("setup"),
+        setup_storage_key: [21; 32],
         session_ttl: 3600,
         session_secret: token() + &token(),
         csrf_key: [7; 32],
@@ -145,10 +109,74 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
         body_limit: 1048576,
         rate_limit_per_minute: 10000,
     };
+    // 注册验收同样从真实空库初始化开始，不预置管理员或导入签发私钥。
     let app = Application::bootstrap(config.clone()).await.unwrap();
+    let code_path = app.ensure_setup_code(false, false).await.unwrap();
+    let draft_id = app
+        .setup_verify(std::fs::read_to_string(code_path).unwrap())
+        .await
+        .unwrap();
+    let draft = app.setup_draft(&draft_id).await.unwrap();
+    let draft = app
+        .setup_admin(
+            &draft_id,
+            crypto_sso_identity_api::SetupAdminInput {
+                expected_revision: draft.revision,
+                username: "admin".into(),
+                password: Some(password.clone()),
+            },
+            &token(),
+        )
+        .await
+        .unwrap();
+    let draft = app
+        .setup_service(
+            &draft_id,
+            crypto_sso_identity_api::SetupServiceInput {
+                expected_revision: draft.revision,
+                service: crypto_sso_identity_api::SetupService {
+                    display_name: "Integration identity center".into(),
+                    public_base_url: base.clone(),
+                    description: String::new(),
+                    contact: String::new(),
+                },
+            },
+            &token(),
+        )
+        .await
+        .unwrap();
+    let key = app
+        .setup_generate(
+            &draft_id,
+            crypto_sso_identity_api::SetupKeyInput {
+                expected_revision: draft.revision,
+                organization: "Integration identity center".into(),
+            },
+            &token(),
+        )
+        .await
+        .unwrap();
+    let draft = app.setup_draft(&draft_id).await.unwrap();
+    let (operation, _) = app
+        .setup_begin_submission(&draft_id, &token())
+        .await
+        .unwrap();
+    app.setup_complete(
+        &draft_id,
+        crypto_sso_identity_api::SetupCompleteInput {
+            operation_id: operation.operation_id,
+            draft_id: draft_id.clone(),
+            expected_revision: draft.revision,
+            key_id: key.operation_id,
+            identity_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let issuer = app.issuer().await.unwrap();
     let server = Server::new(acceptor);
     let server_handle = server.handle();
-    let server_task = tokio::spawn(server.serve(issuer_service::http::service(app.clone())));
+    let server_task = tokio::spawn(server.serve(issuer_service::views::service(app.clone())));
     assert_eq!(
         Client::new()
             .get(format!("{base}/admin/login"))
@@ -973,4 +1001,8 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
             .unwrap()["state"],
         "CREDENTIAL_DELETED"
     );
+    toasty::sql::statement(format!("DROP SCHEMA {schema} CASCADE"))
+        .exec(&mut admin_db)
+        .await
+        .unwrap();
 }

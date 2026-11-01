@@ -1,3 +1,4 @@
+use anyhow::Context;
 use issuer_service::config::{number, required};
 use salvo::prelude::*;
 
@@ -6,7 +7,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     crypto_sso_telemetry::init()?;
     tracing::info!("starting relying party");
-    // SAFETY: process startup, before constructing the verifier or accepting requests.
+    // 安全性：仅在启动阶段设置限制，此时尚未构造验证器或接收请求。
     unsafe {
         crypto_sso_verifier::set_claims_limits(crypto_sso_verifier::ClaimsLimits {
             max_keys: number("SDK_MAX_CLAIMS")?,
@@ -30,7 +31,8 @@ async fn main() -> anyhow::Result<()> {
         number("COOKIE_SECURE")?,
     );
     let bind = required("RP_BIND")?;
-    let server = Server::new(TcpListener::new(bind.clone()).bind().await);
+    let listener=TcpListener::new(bind.clone()).try_bind().await.with_context(|| format!("示例应用无法监听 {bind}。请检查端口占用；调整端口时同步修改 RP_BIND 和 RP_API_TARGET"))?;
+    let server = Server::new(listener);
     tracing::info!(%bind, "relying party ready");
     let handle = server.handle();
     tokio::spawn(async move {

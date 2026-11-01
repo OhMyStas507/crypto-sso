@@ -2,10 +2,12 @@
 mod audit;
 pub mod domain;
 mod enrollment;
+mod initialization;
 mod session;
 mod settings;
 
 pub use audit::*;
 pub use enrollment::*;
+pub use initialization::*;
 pub use session::*;
 pub use settings::*;

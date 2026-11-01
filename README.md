@@ -53,7 +53,7 @@ SDK 已按 core、issuer、holder、verifier 四个 crate 划分，支持带属�
 
 当前代码模块、实际目录、页面路由及 HTTP/IPC 契约见 [项目结构与模块说明](docs/identity-center-wallet-project-structure.md)，采用 PostgreSQL、Salvo、Toasty、Solid 与 Tauri。
 
-空数据库自动迁移后的管理员、服务信息和签发密钥 WebUI 初始化设计见 [首次启动与初始化](docs/identity-center-bootstrap-design.md)，配套 [GUI 设计图集](docs/gui-design/index.html)。本项目前为业务文档与静态稿，尚未接入运行代码。
+空数据库自动迁移后，可通过 WebUI 设置管理员、服务信息和新的签发密钥，支持草稿恢复及幂等提交。详见 [首次启动与初始化](docs/identity-center-bootstrap-design.md) 和 [GUI 设计图集](docs/gui-design/index.html)。
 
 ## 开发数据库
 
@@ -84,7 +84,7 @@ bun scripts/init-dev-db.mjs
 
 ## 注册中心与钱包
 
-应用基础配置从环境变量读取，开发时使用根目录 `.env`；Docker 基础设施单独由 Compose 文件配置。执行 `bun scripts/setup-dev.js` 可生成应用开发配置、固定签发密钥及管理员密码；完整准备、启动和验收步骤见 [部署说明](deploy/README.md)。
+应用基础配置从环境变量读取，开发时使用根目录 `.env`；Docker 基础设施单独由 Compose 文件配置。执行 `bun scripts/setup-dev.js` 生成应用部署配置与加密根密钥，启动后通过管理网页完成中心初始化；完整准备、启动和验收步骤见 [部署说明](deploy/README.md)。
 
 - 注册中心使用 MVVM：`src/models/` 定义持久化实体与领域规则，`src/viewmodels/` 编排业务事务及明确类型的展示契约，`src/views/` 组装 Salvo 路由、Handler、Session 和 CSRF 中间件；`worker.rs` 执行后台签发。业务数据以 Toasty 原生 CRUD 与关联查询持久化至 PostgreSQL。中心和示例应用启动时自动应用迁移，完成后再接收请求；业务写事务使用 Serializable 隔离与自动回滚。应用日志使用 `tracing`，通过 `RUST_LOG` 配置级别。
 - 管理后台实现服务设置、Claims 建议、人工核验与审批、成员查询、签发台账和审计。

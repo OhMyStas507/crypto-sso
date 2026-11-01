@@ -138,8 +138,9 @@ SDK 消息保留原始 JSON，最终进入各角色的严格 wire 解析器，�
 ```text
 issuer-service/src/
 ├── models/                           # Model
-│   ├── mod.rs                        # 统一导出实体，保持原有导入路径
+│   ├── mod.rs                        # 统一导出当前业务实体
 │   ├── settings.rs                   # 中心身份、服务配置、属性提示版本
+│   ├── initialization.rs             # 中心初始化、正式管理员、候选密钥与回执
 │   ├── enrollment.rs                 # 申请聚合、审核历史、成员
 │   ├── audit.rs                      # 审计事件、幂等结果存储
 │   ├── session.rs                    # 浏览器会话、撤销、挑战、应用会话
@@ -148,6 +149,7 @@ issuer-service/src/
 │   ├── mod.rs                        # Application 共享依赖和初始化
 │   ├── contracts.rs                  # 明确的请求、响应、查询与审核动作类型
 │   ├── auth.rs                       # 管理员凭据验证
+│   ├── setup.rs                      # 初始化草稿、密钥准备、完成事务与清理
 │   ├── enrollment.rs                 # 申请提交、状态、取消与凭证读取
 │   ├── settings.rs                   # 配置保存与修订控制
 │   ├── review.rs                     # 审批、退回、拒绝及重试事务
@@ -157,25 +159,25 @@ issuer-service/src/
 │   ├── mod.rs                        # 路由、HTTP 提取与健康检查
 │   ├── public.rs                     # 钱包公开 API
 │   ├── admin.rs                      # 管理 API、Cookie 和会话适配
+│   ├── setup.rs                      # 独立初始化会话、CSRF 与回执 Cookie
 │   └── middleware.rs                 # 来源、会话、限流与安全响应头
-├── application.rs                    # 兼容导出 viewmodels::Application
-├── domain.rs                         # 兼容导出 models::domain
 ├── store.rs                          # 模型注册、数据库连接与启动迁移
 ├── session_store.rs                  # Salvo PostgreSQL 会话存储适配
 ├── worker.rs                         # 持久化签发租约和后台调度
 ├── config.rs                         # 部署配置
 ├── security.rs                       # 令牌、摘要和时间工具
+├── key_store.rs                      # 候选私钥认证加密、受限目录和不可覆盖落盘
 ├── error.rs                          # 稳定错误与 HTTP 错误映射
-├── lib.rs                            # 模块与兼容路径导出
+├── lib.rs                            # 业务模块导出
 ├── main.rs                           # 配置、SDK 限制、HTTP 和 worker 启动
 └── bin/
     ├── issuer-db.rs                  # Toasty 官方迁移 CLI
-    └── hash-password.rs              # 管理员密码哈希工具
+    └── setup-control.rs              # 初始化码轮换、过期草稿废弃与候选回收
 ```
 
 HTTP handler 统一使用 `<操作对象>_<动作>` 命名，例如 `enrollment_submit`、`enrollment_approve`、`settings_save`、`admin_session_create`。签名返回具体的 `Json<T>`、`Json<Page<T>>` 或明确的中间件结果类型，禁止使用 `Json<Value>` 等动态类型。带 ETag 的属性提示接口返回 `ClaimHintsReply` 枚举，分别渲染 `ClaimHintsResponse` 或无响应体的 304。共享契约仍定义在 `crates/identity-api`；后端专用展示类型定义在 `viewmodels/contracts.rs`。SDK 交换消息保留原始 JSON，由 SDK wire 入口严格解析。
 
-现有 URL、JSON 字段及数据库映射保持兼容。`http` 是 `views` 的兼容导出；旧 Rust 调用方使用审核用例时，需将字符串动作替换为 `ReviewAction`，并读取具体响应类型的字段。中心原先面向钱包的 `Application::wallet_action` 已拆为 `enrollment_status`、`enrollment_cancel` 和 `credential_get`。
+中心 Rust 调用方直接使用 `models`、`viewmodels` 和 `views`，不提供 `application`、`domain` 或 `http` 旧路径重导出。审核动作使用 `ReviewAction`，接口读取明确的请求和响应类型。
 
 以上模块属于同一 crate，按真实业务职责扩展。
 
@@ -189,7 +191,7 @@ HTTP handler 统一使用 `<操作对象>_<动作>` 命名，例如 `enrollment_
 | `models / store` | 类型化 Toasty 模型、统一注册、连接与启动迁移 | CRUD 由用例直接使用框架生成的 API |
 | `sdk/issuer` | 保持固定 issuer、严格 SDK 解析及盲签发 | 使用 issuer crate；不依赖 holder/verifier |
 | `worker.rs` | 轮询、申请过期、租约恢复、签发与会话清理 | 直接使用领域规则、SDK 和 Toasty 事务；由 main 启动 |
-| `main.rs / viewmodels/mod.rs` | 启动与共享依赖组装 | main 设置 SDK 限制，Application::bootstrap 导入密钥、连接数据库并初始化配置 |
+| `main.rs / viewmodels/mod.rs` | 启动与共享依赖组装 | main 设置 SDK 限制；先连接数据库自动迁移，再检查已有身份或进入无签发器的初始化模式 |
 
 当前实现不为每张表建立通用 CRUD trait 或通用 JSON 存取函数；由 `viewmodels`、`worker.rs` 和会话/应用适配器直接拥有 Toasty 原生事务；`models` 按业务对象定义类型化 ORM 模型，`store.rs` 仅提供模型注册、数据库句柄与启动迁移。所有关联读写传入同一个 `&mut Transaction`，不能在事务中重新取得全局数据库句柄执行关联操作。
 
@@ -215,7 +217,7 @@ HTTP handler 统一使用 `<操作对象>_<动作>` 命名，例如 `enrollment_
 
 管理员账号与密码哈希来自部署环境；`AdminSession` 是保存在 Salvo 会话中的身份模型，定义于 `models/domain.rs`，没有独立的管理员用户表或管理员会话表。审核决定、成员名额、签发任务与结果通过 `Enrollment` 和 `Member` 字段表达，没有单独的 decision、job、slot 或 issuance 模型。
 
-`ReviewHistory` 是 `enrollment.rs` 中的结构化历史模型。Claims、属性提示、公开状态、审核决定及历史使用明确的 `Json<T>` 映射 JSONB；主键、关联、开关、修订、租约与时间单独建列。幂等存储兼容多种历史操作结果，恢复时由 `viewmodels/idempotency.rs` 反序列化为指定响应类型。
+`ReviewHistory` 是 `enrollment.rs` 中的结构化历史模型。Claims、属性提示、公开状态、审核决定及历史使用明确的 `Json<T>` 映射 JSONB；主键、关联、开关、修订、租约与时间单独建列。幂等存储保存不同业务操作的已提交结果，恢复时由 `viewmodels/idempotency.rs` 反序列化为指定响应类型。
 
 签发列表按申请存在审核决定筛选；列表搜索、排序和分页当前在内存完成。管理端显式转换为 `AdminEnrollmentView`、`MemberView` 和 `AuditEventView`，排除访问摘要、请求原文及签名响应等内部字段。
 
@@ -262,9 +264,9 @@ member.update().issued(true).exec(&mut tx).await?;
 
 模型按业务对象定义于 `models` 并由 `store.rs` 统一注册；用例直接调用 Toasty 的 CRUD 与事务 API，结构化 JSONB 字段的编解码交给原生 `Json<T>`。对 ORM 之外确需使用的 PostgreSQL DDL，放入受版本管理的迁移；用例及 handler 不散落 SQL，也不再并行引入另一套 ORM。
 
-中心和示例应用在每次启动时调用 Toasty `MigrationSet::apply`，自动应用各自数据库中尚未执行的迁移；框架维护 `__toasty_migrations` 并跳过已应用版本。迁移完成后才启动 HTTP 服务和后台任务，失败则退出。模型变更后生成、审阅并提交迁移产物，再重新构建程序；不在运行时手写建表或重新实现迁移历史管理。迁移验收覆盖新库、旧原型及已有旧迁移历史的数据库，验证所有类型化模型的数据搬迁、原生关联、旧锁表移除和重复启动。`0001_remove_transaction_guard.sql` 由官方 CLI 生成，不修改已应用的初始迁移；升级前停止旧版服务和 worker，避免不同事务实现混合运行。事务验收使用真实 PostgreSQL 验证提交可见性、自动/显式回滚、嵌套保存点及并发写偏差保护，并继续验证业务事务及任务竞争。
+中心和示例应用在每次启动时调用 Toasty `MigrationSet::apply`，框架维护迁移历史并跳过已应用版本；迁移成功后才开放 HTTP 服务。初始基线 `0000_identity_center.sql` 由官方 CLI 根据当前模型生成，直接创建当前表结构，不接纳或搬迁旧原型数据。测试覆盖空库建表、重复启动、快照一致性、事务可见性、回滚与并发保护。
 
-`0002_typed_business_models.sql` 的 DDL 与快照由官方 CLI 生成，迁移内补充一次性数据转换语句，旧 `identity_records` 的业务对象转入独立模型表，原始行完整保留为 `identity_records_legacy` 迁移归档。归档不注册为运行时模型，应用不再通过前缀或通用 JSON CRUD 访问业务数据。数据转换仍随 Toasty 迁移原子执行，失败不会留下部分搬迁结果；不在应用启动函数中自行遍历旧记录或维护迁移版本。
+当前迁移目录只保留全新数据库基线及对应快照。后续模型变化通过官方 CLI 生成增量迁移；应用不维护旧记录表、前缀 JSON 存储或兼容归档。
 
 ### 5.4 日志
 
@@ -272,7 +274,7 @@ member.update().issued(true).exec(&mut tx).await?;
 
 事务冲突作为预期竞争记录在 `debug`，worker 租约竞争留待下一轮；数据库操作失败、任务失败和本地加密写入失败使用 `error`。HTTP 错误只记录公开状态码、错误码与响应中的 `trace_id`。span 使用 `skip_all`，不捕获密钥、连接串、申请/证明/Claims、Cookie 或钱包数据；默认配置提高应用 target 以及 `salvo_extra::logging` 的日志级别，其余第三方 SQL/HTTP 库保持 `warn`。
 
-注册中心通过 `views::service`（兼容导出 `http::service`）、独立应用通过 `http::service` 构建 Salvo `Service`，在路由层之外挂载框架原生 `logging::Logger`。它以 `info` 记录每次访问的方法、路径、状态码、耗时、协议及远端地址，并将请求 span 传播到业务日志。Service 中间件保证权限/来源/CSRF/限流早期返回及 404/405 都会被记录；不自行实现路径分发或访问日志计时器。默认 `RUST_LOG` 显式包含 `salvo_extra::logging=info`，应用 target 为 `info`。
+注册中心通过 `views::service`、独立应用通过 `http::service` 构建 Salvo `Service`，在路由层之外挂载框架原生 `logging::Logger`。它以 `info` 记录每次访问的方法、路径、状态码、耗时、协议及远端地址，并将请求 span 传播到业务日志。Service 中间件保证权限/来源/CSRF/限流早期返回及 404/405 都会被记录；不自行实现路径分发或访问日志计时器。默认 `RUST_LOG` 显式包含 `salvo_extra::logging=info`，应用 target 为 `info`。
 
 访问日志仅使用 URI 的 path，不包含 query、Authorization、Cookie 或请求体。`issuer-service/tests/access_logs.rs` 通过实际 Service 请求验证正常响应、早期拒绝、路由缺失、方法不匹配和服务错误，检查每条访问记录的 INFO 等级、字段及请求敏感数据隔离；端到端测试使用与生产相同的 Service 入口。
 
@@ -293,6 +295,7 @@ issuer-service-webui/
     ├── pages/
     │   ├── index.ts  # 页面导出
     │   ├── Login.tsx  # 登录
+    │   ├── SetupPage.tsx  # 首次初始化、状态门禁与中断恢复
     │   ├── OverviewPage.tsx  # 总览
     │   ├── EnrollmentList.tsx  # 申请列表和签发台账
     │   ├── ReviewPage.tsx  # 申请详情与审核
@@ -304,6 +307,7 @@ issuer-service-webui/
     │   └── NotFound.tsx  # 未知路由
     ├── design.css  # 设计样式
     ├── interactive.css  # 交互样式
+    ├── setup.css  # 初始化向导样式与窄屏适配
     ├── index.css  # 入口样式
     └── App.css  # 应用样式
 ```
@@ -356,11 +360,11 @@ issuer-service-webui/
 
 管理页面所有 Claims、备注和理由作为文本显示；输入的 HTML 不进入 `innerHTML`。审计及通知仅展示需要的信息，不将完整表单写入浏览器日志。
 
-### 7.5 计划新增首次初始化向导
+### 7.5 首次初始化向导
 
-本节为 2026-11-01 的后续设计，以下路由、组件及 API 尚未实现；不属于上表的当前页面。详细业务契约见 [首次启动与 WebUI 初始化设计](identity-center-bootstrap-design.md)，静态稿见 [GUI 图集](gui-design/index.html)。
+以下初始化路由已实现，与 7.1 的正常后台页面共用管理前端。详细业务契约见 [首次启动与 WebUI 初始化设计](identity-center-bootstrap-design.md)，静态稿见 [GUI 图集](gui-design/index.html)。
 
-| 计划路由 | 计划页面 | 内容与状态 | 静态稿 |
+| 路由 | 当前页面 | 内容与状态 | 静态稿 |
 | --- | --- | --- | --- |
 | `/admin/setup` | `SetupPage.tsx` 的验证/门禁视图 | 迁移后部署权限验证、服务未就绪、会话失效、已初始化重访 | a20、a28、a29、a32 |
 | `/admin/setup/admin` | 同一向导的管理员步骤 | 首位管理员账号及密码，字段校验 | a21、a34 |
@@ -369,9 +373,11 @@ issuer-service-webui/
 | `/admin/setup/review` | 同一向导的最终确认步骤 | 配置汇总、最终提交中及提交结果未知 | a25、a26、a31 |
 | `/admin/setup/complete` | 同一向导的完成视图 | 只读本次提交回执，进入正常管理员登录 | a27 |
 
-拟在 `App.tsx` 中增加位于正常管理员 Layout 之前的中心初始化状态门禁；它与管理员会话查询分开。后端仍按 MVVM 分层，拟新增初始化控制/草稿/管理员模型、初始化 ViewModel 及 setup 路由分组，并将共享 DTO 纳入 `identity-api`。候选密钥由服务端受保护存储管理，不由 Solid 或浏览器生成。
+`App.tsx` 的 `CenterGate` 在正常管理员 Layout 之前检查中心初始化状态，与管理员会话查询分开。后端按 MVVM 分层，初始化控制、草稿、管理员、候选密钥和提交回执位于 `models/initialization.rs`，业务事务位于 `viewmodels/setup.rs`，HTTP 与会话位于 `views/setup.rs`，共享 DTO 已纳入 `identity-api`。候选密钥由 `key_store.rs` 在服务端生成并加密持久化。
 
-数据库表结构自动迁移与中心业务初始化是两个阶段。后续需让 `Config` 在新中心模式下不再强制要求预置管理员与 issuer 文件，让 `Application` 在完成初始化前可以无签发器运行；当前代码尚不支持此模式。原中心身份不匹配或密钥丢失应走恢复分支，不能落入新中心向导。实现后再同步当前目录树与配置清单。
+表结构迁移与业务初始化分为两个阶段。部署层提供 `SETUP_STORAGE_KEY`；空库启动后 `Application` 可无签发器运行，仅允许初始化接口。完成后按数据库固定引用加载密钥，其他实例读取相同状态。身份不匹配、密钥丢失或控制记录损坏均拒绝启动，不会重新开放向导。正式管理员保存在数据库，不读取环境中的账号密码。
+
+迁移 `0000_identity_center.sql` 和快照由 Toasty 官方 CLI 生成。`tests/initialization.rs` 在随机 schema 中验证空库、真实 HTTP、密钥故障、过期与并发；浏览器用例调用 `scripts/check-setup-ui.mjs` 使用真实 API，并覆盖丢失最终响应后查询回执恢复。
 
 ## 8. 钱包 Rust 后端目录
 
@@ -601,7 +607,7 @@ examples/relying-party/
 | 范围 | 当前入口 | 验证内容 |
 |---|---|---|
 | API 访问日志 | `issuer-service/tests/access_logs.rs` | 实际 Service 的正常响应、早期拒绝、404/405、失败与敏感信息隔离 |
-| 启动迁移 | `issuer-service/tests/migrations.rs` | 新库、旧记录转换、关联、快照与重复启动 |
+| 启动迁移 | `issuer-service/tests/migrations.rs` | 全新 schema、重复启动、数据保留与快照一致性 |
 | 数据库原子性 | `issuer-service/tests/transactions.rs` | 提交可见性、自动/显式回滚、保存点、并发写偏差 |
 | 钱包加密存储 | `wallet/src-tauri/src/storage.rs` 内联测试 | Windows DPAPI、加密重开、篡改检测、单写入者 |
 | 钱包恢复 | `wallet/src-tauri/src/engine.rs` 内联测试 | 注册关闭后暂停重试、锁定重开后恢复材料保留 |
@@ -616,6 +622,6 @@ examples/relying-party/
 
 本文按当前源码组织维护，不把尚未创建的模块或事件列为已有实现。新增、移动或删除业务模块时，同步修改对应目录树、模块表、页面映射及调用链；HTTP/IPC 类型变化同时检查生成产物。
 
-中心新增能力遵循 Model → ViewModel → View 的职责划分；所有 Model、ViewModel 类型保留中文用途注释，handler 使用明确类型及 `<操作对象>_<动作>` 命名。兼容导出 `application`、`domain` 和 `http` 只用于旧导入路径，新的中心实现放在 `models`、`viewmodels`、`views`。
+中心新增能力遵循 Model → ViewModel → View 的职责划分；新增 Model、ViewModel 的用途注释使用中文，直接使用当前模块和明确的类型化接口。
 
 具体业务规则见 [业务流程文档](identity-center-wallet-business-flow.md)，启动、环境与迁移见 [部署说明](../deploy/README.md)。本次同步只调整文档，不新增业务模块或改变数据库。

@@ -49,10 +49,12 @@ let csrf = "";
 export class ApiFailure extends Error {
   code: string;
   traceId: string;
-  constructor(code: string, message: string, traceId = "") {
+  status: number;
+  constructor(code: string, message: string, traceId = "", status = 0) {
     super(message);
     this.code = code;
     this.traceId = traceId;
+    this.status = status;
   }
 }
 export function operationKey(): string {
@@ -92,6 +94,7 @@ export async function api<T>(
       value.code,
       value.message ?? "请求失败",
       value.trace_id,
+      response.status,
     );
   }
   if (
@@ -99,5 +102,42 @@ export async function api<T>(
     method !== "DELETE"
   )
     csrf = value.csrf_token;
+  return value as T;
+}
+
+let setupCsrf = "";
+// 初始化使用独立 Cookie 和 CSRF 上下文，失败时由向导处理，不跳转普通登录页。
+export async function setupApi<T>(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  key?: string,
+): Promise<T> {
+  const response = await fetch(`/api/v1/setup/${path}`, {
+    method,
+    credentials: "same-origin",
+    cache: "no-store",
+    signal: AbortSignal.timeout(20000),
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": setupCsrf,
+      ...(key ? { "Idempotency-Key": key } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const value = await response
+    .json()
+    .catch(() => ({
+      code: "REQUEST_REJECTED",
+      message: "请求被拒绝，请重新检查服务状态",
+    }));
+  if (!response.ok)
+    throw new ApiFailure(
+      value.code,
+      value.message ?? "请求失败",
+      value.trace_id,
+      response.status,
+    );
+  if (path === "csrf") setupCsrf = value.csrf_token ?? "";
   return value as T;
 }

@@ -3,6 +3,18 @@ use ts_rs::TS;
 
 fn main() {
     let declarations = [
+        SetupState::decl(),
+        SetupStatus::decl(),
+        SetupService::decl(),
+        SetupKeyView::decl(),
+        SetupDraft::decl(),
+        SetupVerify::decl(),
+        SetupAdminInput::decl(),
+        SetupServiceInput::decl(),
+        SetupKeyInput::decl(),
+        SetupCompleteInput::decl(),
+        SetupReceipt::decl(),
+        SetupOperation::decl(),
         ClaimHint::decl(),
         ServiceSettings::decl(),
         ClaimsLimits::decl(),

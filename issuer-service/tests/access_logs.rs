@@ -1,7 +1,7 @@
 //! Exercise the same native Salvo logger used by both HTTP services, including
 //! early rejections and routing misses. This test needs no database.
 use issuer_service::viewmodels::contracts::HealthResponse;
-use issuer_service::{error::Error, http::with_access_logging};
+use issuer_service::{error::Error, views::with_access_logging};
 use salvo::{prelude::*, test::TestClient};
 use std::{
     io::{self, Write},

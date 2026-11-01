@@ -16,7 +16,7 @@ use salvo_csrf::{CsrfDepotExt, HeaderFinder};
 use serde_json::{Value, json};
 
 pub fn service(app: App, secret: &[u8], csrf_key: [u8; 32], secure: bool) -> Service {
-    issuer_service::http::with_access_logging(router(app, secret, csrf_key, secure))
+    issuer_service::views::with_access_logging(router(app, secret, csrf_key, secure))
 }
 
 pub fn router(app: App, secret: &[u8], csrf_key: [u8; 32], secure: bool) -> Router {

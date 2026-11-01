@@ -17,7 +17,11 @@ pub async fn connect_database(url: &str) -> toasty::Result<toasty::Db> {
             WebSession,
             RevokedSession,
             StoredChallenge,
-            ApplicationSession
+            ApplicationSession,
+            Initialization,
+            Administrator,
+            InitializationKey,
+            InitializationSubmission
         ))
         .connect(url)
         .await

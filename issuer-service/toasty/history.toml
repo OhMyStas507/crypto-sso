@@ -1,16 +1,6 @@
 version = 1
 
 [[migrations]]
-id = 655011334963912120
-name = "0000_registry.sql"
+id = 861681770720607600
+name = "0000_identity_center.sql"
 snapshot_name = "0000_snapshot.toml"
-
-[[migrations]]
-id = 7908982605306959168
-name = "0001_remove_transaction_guard.sql"
-snapshot_name = "0001_snapshot.toml"
-
-[[migrations]]
-id = 4579474405125869830
-name = "0002_typed_business_models.sql"
-snapshot_name = "0002_snapshot.toml"

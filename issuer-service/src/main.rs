@@ -1,3 +1,4 @@
+use anyhow::Context;
 use issuer_service::{config::Config, viewmodels::Application, views, worker};
 use salvo::prelude::*;
 
@@ -7,7 +8,7 @@ async fn main() -> anyhow::Result<()> {
     crypto_sso_telemetry::init()?;
     tracing::info!("starting identity center");
     let config = Config::from_env()?;
-    // SAFETY: startup only, before any request or signing worker can call the SDK.
+    // 安全性：仅在启动阶段设置限制，此时请求与签发任务尚未调用 SDK。
     unsafe {
         crypto_sso_issuer::set_claims_limits(crypto_sso_issuer::ClaimsLimits {
             max_keys: issuer_service::config::number("SDK_MAX_CLAIMS")?,
@@ -17,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let bind = config.bind.clone();
     let app = Application::bootstrap(config).await?;
-    let listener = TcpListener::new(bind.clone()).bind().await;
+    let listener = TcpListener::new(bind.clone()).try_bind().await.with_context(|| format!("身份中心无法监听 {bind}。请检查端口占用；调整端口时同步修改 ISSUER_BIND 和 ISSUER_API_TARGET"))?;
     tracing::info!(%bind, "identity center ready");
     let worker = tokio::spawn(worker::run(app.clone()));
     let server = Server::new(listener);

@@ -10,8 +10,9 @@ Check { cargo test -p wallet --lib }
 Check { cargo test -p issuer-service --test access_logs }
 Check { cargo test -p issuer-service --test migrations -- --ignored }
 Check { cargo test -p issuer-service --test transactions -- --ignored }
-Check { cargo test -p crypto-sso-relying-party --test end_to_end -- --ignored }
 Check { bun run --cwd issuer-service-webui build }
+Check { cargo test -p issuer-service --test initialization -- --ignored }
+Check { cargo test -p crypto-sso-relying-party --test end_to_end -- --ignored }
 Check { bun run --cwd wallet build }
 Check { bun run --cwd examples/relying-party/web build }
 & "$PSScriptRoot/check-contracts.ps1"

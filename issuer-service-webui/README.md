@@ -7,3 +7,5 @@ Solid + Solid Router + Solid Query。界面遵循 `docs/gui-design` 的布局与
 路由、布局、会话门禁与 QueryClient 位于 `src/App.tsx`；页面位于 `src/pages`，申请列表和签发台账共用 `EnrollmentList.tsx`，服务设置和属性提示共用 `SettingsPage.tsx`。请求、错误及 CSRF 封装位于 `src/api.ts`，可重试写操作的幂等键位于 `src/features/useWrite.tsx`。共享 HTTP 类型来自 Rust 契约生成的本地包，管理端专用展示接口目前声明在 `api.ts`。
 
 完整配置、初始化和运行说明见 [部署文档](../deploy/README.md)。
+
+`App.tsx` 的 `CenterGate` 在普通管理员会话前检查中心初始化状态。空库进入 `pages/SetupPage.tsx`，使用独立 `/api/v1/setup`、Cookie 和 CSRF 上下文，完成部署验证、管理员、服务信息、签发身份及最终提交；`setup.css` 沿用现有设计规范。草稿只由服务端持久化，页面不会把密码、初始化码或私钥写入浏览器存储。初始化完成后仍需通过正常登录页建立管理会话。

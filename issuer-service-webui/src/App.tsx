@@ -5,8 +5,10 @@ import {
   QueryClientProvider,
   createQuery,
 } from "@tanstack/solid-query";
-import { api, type Session } from "./api";
-import { Icon, ErrorNotice } from "./ui";
+import { api, setupApi, type Session } from "./api";
+import type { SetupStatus } from "@crypto-sso/identity-api-types";
+import { Icon, ErrorNotice, Button } from "./ui";
+import { SetupPage } from "./pages/SetupPage";
 import {
   Login,
   OverviewPage,
@@ -36,6 +38,40 @@ const nav = [
   ["/settings/issuer", "fingerprint", "签发身份"],
   ["/audit", "clock-history", "审计记录"],
 ];
+function CenterGate(p: ParentProps) {
+  const location = useLocation();
+  const status = createQuery(() => ({
+    queryKey: ["setup-status"],
+    queryFn: () => setupApi<SetupStatus>("status"),
+  }));
+  return (
+    <Show
+      when={location.pathname.startsWith("/admin/setup")}
+      fallback={
+        <Show
+          when={status.data}
+          fallback={
+            <div class="loading">
+              <ErrorNotice error={status.error} />
+              <Show when={status.error} fallback="正在检查身份中心状态…">
+                <Button onClick={() => void status.refetch()}>重新检查</Button>
+              </Show>
+            </div>
+          }
+        >
+          <Show
+            when={status.data?.state === "initialized"}
+            fallback={<Navigate href="/setup" />}
+          >
+            {p.children}
+          </Show>
+        </Show>
+      }
+    >
+      {p.children}
+    </Show>
+  );
+}
 function Layout(p: ParentProps) {
   const session = createQuery(() => ({
     queryKey: ["admin-session"],
@@ -111,7 +147,8 @@ function Layout(p: ParentProps) {
 export default function App() {
   return (
     <QueryClientProvider client={client}>
-      <Router base="/admin">
+      <Router base="/admin" root={CenterGate}>
+        <Route path="/setup/:step?" component={SetupPage} />
         <Route path="/login" component={Login} />
         <Route component={Layout}>
           <Route path="/" component={() => <Navigate href="/overview" />} />

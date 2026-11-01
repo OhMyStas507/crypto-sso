@@ -6,6 +6,113 @@ use ts_rs::TS;
 /// 属性集合模型，以有序键值映射保存申请人声明的属性。
 pub type Claims = BTreeMap<String, String>;
 
+/// 对外仅公开中心是否需要初始化，不包含草稿或账号信息。
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum SetupState {
+    SetupRequired,
+    SetupInProgress,
+    Initialized,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+pub struct SetupStatus {
+    pub state: SetupState,
+}
+
+/// 初始化中可编辑的公开服务信息，不包含部署秘密或业务开关。
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SetupService {
+    pub display_name: String,
+    pub public_base_url: String,
+    pub description: String,
+    pub contact: String,
+}
+
+/// 候选签发身份的公开视图，不返回私钥、文件路径或解密材料。
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+pub struct SetupKeyView {
+    pub operation_id: String,
+    pub organization: String,
+    pub status: String,
+    pub issuer_id: Option<String>,
+    #[ts(type = "Record<string, unknown> | null")]
+    pub issuer_public: Option<serde_json::Value>,
+}
+
+/// 已验证初始化会话可读取的草稿摘要；密码只返回是否已设置。
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+pub struct SetupDraft {
+    pub draft_id: String,
+    pub revision: u32,
+    pub expires_at: u64,
+    pub username: String,
+    pub password_configured: bool,
+    pub service: Option<SetupService>,
+    pub key: Option<SetupKeyView>,
+}
+
+/// 一次性初始化码仅用于部署权限验证，不作为管理员密码。
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SetupVerify {
+    pub code: String,
+}
+
+/// 管理员草稿写入；密码原文只用于服务端即时计算哈希。
+#[derive(Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SetupAdminInput {
+    pub expected_revision: u32,
+    pub username: String,
+    pub password: Option<String>,
+}
+
+/// 带期望修订的公开服务信息保存请求。
+#[derive(Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SetupServiceInput {
+    pub expected_revision: u32,
+    pub service: SetupService,
+}
+
+/// 生成操作绑定不可变的组织身份，重试时继续同一候选密钥。
+#[derive(Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SetupKeyInput {
+    pub expected_revision: u32,
+    pub organization: String,
+}
+
+/// 最终确认只引用已保存的草稿和密钥，不再次传输密码或私钥。
+#[derive(Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SetupCompleteInput {
+    pub operation_id: String,
+    pub draft_id: String,
+    pub expected_revision: u32,
+    pub key_id: String,
+    pub identity_confirmed: bool,
+}
+
+/// 初始化提交成功后的有限摘要，不能用于调用管理接口。
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+pub struct SetupReceipt {
+    pub username: String,
+    pub service: SetupService,
+    pub organization: String,
+    pub issuer_id: String,
+}
+
+/// 只读回执用于恢复结果未知的最终提交，不代表管理员会话。
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+pub struct SetupOperation {
+    pub operation_id: String,
+    pub completed: bool,
+    pub result: Option<SetupReceipt>,
+}
+
 /// 属性提示模型，描述建议属性及默认值、示例值。
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]

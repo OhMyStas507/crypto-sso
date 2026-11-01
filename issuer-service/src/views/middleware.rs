@@ -9,6 +9,28 @@ use std::{
 pub type RateMap = Arc<Mutex<HashMap<String, (u64, u32)>>>;
 
 #[handler]
+pub async fn center_ready(req: &Request, depot: &Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
+    if req.uri().path().starts_with("/api/v1/setup/") {
+        return;
+    }
+    match app(depot).initialized().await {
+        Ok(true) => (),
+        Ok(false) => {
+            res.render(Error::new(
+                503,
+                "CENTER_NOT_INITIALIZED",
+                "身份中心尚未初始化",
+            ));
+            ctrl.skip_rest();
+        }
+        Err(error) => {
+            res.render(error);
+            ctrl.skip_rest();
+        }
+    }
+}
+
+#[handler]
 pub async fn origin_check(
     req: &mut Request,
     depot: &mut Depot,
