@@ -53,6 +53,8 @@ SDK 已按 core、issuer、holder、verifier 四个 crate 划分，支持带属�
 
 当前代码模块、实际目录、页面路由及 HTTP/IPC 契约见 [项目结构与模块说明](docs/identity-center-wallet-project-structure.md)，采用 PostgreSQL、Salvo、Toasty、Solid 与 Tauri。
 
+空数据库自动迁移后的管理员、服务信息和签发密钥 WebUI 初始化设计见 [首次启动与初始化](docs/identity-center-bootstrap-design.md)，配套 [GUI 设计图集](docs/gui-design/index.html)。本项目前为业务文档与静态稿，尚未接入运行代码。
+
 ## 开发数据库
 
 安装并启动 Docker（需支持 Docker Compose v2）。开发容器的数据库、账号、密码、端口和初始化配置全部直接定义在 Compose 文件中，无需准备 `.env`：

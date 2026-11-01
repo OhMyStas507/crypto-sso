@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-10-30T11:48:00.487Z",
-  "total": 54,
+  "generatedAt": "2026-11-01T11:21:49.851Z",
+  "total": 70,
   "bootstrapIconsVersion": "1.13.2",
   "routeCoverage": {
     "document": "docs/identity-center-wallet-project-structure.md",
-    "required": 28,
-    "covered": 28,
+    "required": 34,
+    "covered": 34,
     "missing": []
   },
   "failures": [],
@@ -214,6 +214,182 @@
       "missingIcons": [],
       "clippedControls": [],
       "imageCount": 17,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a20-setup-verify",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 8,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a21-setup-admin",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 10,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a22-setup-service",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 9,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a23-setup-issuer",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 13,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a24-setup-issuer-ready",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 14,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a25-setup-review",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 13,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a26-setup-committing",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 9,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a27-setup-complete",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 12,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a28-setup-unavailable",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 7,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a29-setup-session-expired",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 7,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a30-setup-key-failed",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 12,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a31-setup-result-unknown",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 11,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a32-setup-already-complete",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 12,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a33-setup-draft-conflict",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 10,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a34-setup-admin-invalid",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 10,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "id": "a35-setup-key-generating",
+      "overflow": [],
+      "missingIcons": [],
+      "clippedControls": [],
+      "imageCount": 10,
       "viewport": {
         "width": 1440,
         "height": 1000

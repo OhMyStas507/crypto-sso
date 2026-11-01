@@ -1,14 +1,16 @@
 # Crypto SSO GUI 设计图
 
-根据 [业务流程](../identity-center-wallet-business-flow.md) 与 [页面和路由设计](../identity-center-wallet-project-structure.md) 绘制，2026-10-30。
+根据 [业务流程](../identity-center-wallet-business-flow.md) 与 [页面和路由设计](../identity-center-wallet-project-structure.md) 绘制，2026-10-30；[首次启动与 WebUI 初始化](../identity-center-bootstrap-design.md) 更新于 2026-11-01。
 
-共 54 张独立 PNG：身份中心管理端 19 张，钱包 35 张。覆盖文档中的全部 28 个路由，另含管理端 404 页面与关键交互状态。
+共 70 张独立 PNG：身份中心管理端 35 张（含首次初始化 16 张），钱包 35 张。覆盖当前文档中的 28 个页面路由与 6 个拟新增初始化路由，另含管理端 404 页面与关键交互状态。
 
 ## 查看
 
 - [完整图集](index.html)：在浏览器中打开，搜索页面、查看原图或打开静态界面。
 - [管理端总览](admin-overview.png)
 - [钱包总览](wallet-overview.png)
+- [首次初始化总览](setup-overview.png)
+- [首次初始化预览](setup-preview.png)
 - [管理端 PNG](png/admin/)
 - [钱包 PNG](png/wallet/)
 - [页面、路由与图片清单](manifest.json)
@@ -43,6 +45,12 @@
 | 路由 | 基础设计图 | 额外状态 |
 | --- | --- | --- |
 | `/admin/login` | a01 | a18 登录错误 |
+| `/admin/setup` | a20 部署验证 | a28 后端未就绪、a29 重新验证、a32 已初始化 |
+| `/admin/setup/admin` | a21 首位管理员 | a34 密码不一致 |
+| `/admin/setup/service` | a22 服务信息 | a33 草稿修订冲突 |
+| `/admin/setup/issuer` | a23 创建签发身份 | a24 已生成待启用、a30 存储失败、a35 生成中 |
+| `/admin/setup/review` | a25 最终确认 | a26 提交中、a31 结果未知 |
+| `/admin/setup/complete` | a27 初始化完成 | — |
 | `/admin/overview` | a02 | — |
 | `/admin/enrollments` | a03 | — |
 | `/admin/enrollments/:requestId` | a04 | a13 批准确认、a14 退回、a15 拒绝、a16 签发失败及重试 |
@@ -79,6 +87,9 @@
 
 ## 业务语义
 
+- 初始化必须先验证部署权限；网页仅展示公开身份，私钥由服务端生成并安全保存。
+- 最终事务提交前均为可恢复草稿；初始化完成、管理员登录和开放注册/签发分别展示。
+- 已有中心不会重新开放向导；重启、超时和重复提交不会静默生成另一把签发密钥。
 - 原始申请 Claims 只读，修改需要新草稿；后台不会直接改签申请。
 - Claims 建议可删除、修改或扩展，空集合允许提交。
 - 审批通过、中心签发、本地凭证可用、应用建立会话分别展示。
@@ -91,7 +102,7 @@
 
 ## 源文件与重绘
 
-`shared.js` 与 `design.css` 提供共享组件和视觉规范；`admin.js`、`wallet.js` 定义页面；`screen.html` 与 `boot.js` 用于逐页渲染。图标从项目现有依赖复制到 `assets/icons/`，保留其 MIT LICENSE。查看图集不依赖网络。
+`shared.js` 与 `design.css` 提供共享组件和视觉规范；`admin.js`、`setup.js`、`wallet.js` 定义页面；`screen.html` 与 `boot.js` 用于逐页渲染。图标从项目现有依赖复制到 `assets/icons/`，保留其 MIT LICENSE。查看图集不依赖网络。初始化稿的主要步骤按钮可链接到下一张静态稿，表单值和操作结果仍为演示数据，不执行生成或保存。
 
 重绘使用本机 Node.js、Playwright、Edge headless 和 Sharp：
 

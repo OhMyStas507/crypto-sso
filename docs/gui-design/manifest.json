@@ -190,6 +190,166 @@
     "height": 2000
   },
   {
+    "id": "a20-setup-verify",
+    "product": "admin",
+    "title": "首次初始化 · 部署验证",
+    "route": "/admin/setup",
+    "state": "默认",
+    "file": "png/admin/a20-setup-verify.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a21-setup-admin",
+    "product": "admin",
+    "title": "首次初始化 · 管理员",
+    "route": "/admin/setup/admin",
+    "state": "默认",
+    "file": "png/admin/a21-setup-admin.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a22-setup-service",
+    "product": "admin",
+    "title": "首次初始化 · 服务信息",
+    "route": "/admin/setup/service",
+    "state": "默认",
+    "file": "png/admin/a22-setup-service.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a23-setup-issuer",
+    "product": "admin",
+    "title": "首次初始化 · 创建签发身份",
+    "route": "/admin/setup/issuer",
+    "state": "待生成",
+    "file": "png/admin/a23-setup-issuer.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a24-setup-issuer-ready",
+    "product": "admin",
+    "title": "首次初始化 · 密钥已生成",
+    "route": "/admin/setup/issuer",
+    "state": "密钥已生成 · 待启用",
+    "file": "png/admin/a24-setup-issuer-ready.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a25-setup-review",
+    "product": "admin",
+    "title": "首次初始化 · 确认配置",
+    "route": "/admin/setup/review",
+    "state": "待最终提交",
+    "file": "png/admin/a25-setup-review.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a26-setup-committing",
+    "product": "admin",
+    "title": "首次初始化 · 正在提交",
+    "route": "/admin/setup/review",
+    "state": "提交中 · 操作禁用",
+    "file": "png/admin/a26-setup-committing.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a27-setup-complete",
+    "product": "admin",
+    "title": "首次初始化 · 已完成",
+    "route": "/admin/setup/complete",
+    "state": "完成 · 待管理员登录",
+    "file": "png/admin/a27-setup-complete.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a28-setup-unavailable",
+    "product": "admin",
+    "title": "首次初始化 · 服务未就绪",
+    "route": "/admin/setup",
+    "state": "网络不可用 · 迁移结果未知",
+    "file": "png/admin/a28-setup-unavailable.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a29-setup-session-expired",
+    "product": "admin",
+    "title": "首次初始化 · 重新验证",
+    "route": "/admin/setup",
+    "state": "初始化会话过期 / 初始化码无效",
+    "file": "png/admin/a29-setup-session-expired.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a30-setup-key-failed",
+    "product": "admin",
+    "title": "首次初始化 · 密钥创建失败",
+    "route": "/admin/setup/issuer",
+    "state": "密钥存储不可用 · 保留草稿",
+    "file": "png/admin/a30-setup-key-failed.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a31-setup-result-unknown",
+    "product": "admin",
+    "title": "首次初始化 · 提交结果未知",
+    "route": "/admin/setup/review",
+    "state": "提交结果未知 · 先查询再重试",
+    "file": "png/admin/a31-setup-result-unknown.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a32-setup-already-complete",
+    "product": "admin",
+    "title": "首次初始化 · 入口已关闭",
+    "route": "/admin/setup",
+    "state": "并发完成 / 已初始化重访",
+    "file": "png/admin/a32-setup-already-complete.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a33-setup-draft-conflict",
+    "product": "admin",
+    "title": "首次初始化 · 草稿冲突",
+    "route": "/admin/setup/service",
+    "state": "409 · 草稿修订冲突",
+    "file": "png/admin/a33-setup-draft-conflict.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a34-setup-admin-invalid",
+    "product": "admin",
+    "title": "首次初始化 · 密码校验",
+    "route": "/admin/setup/admin",
+    "state": "两次密码不一致",
+    "file": "png/admin/a34-setup-admin-invalid.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
+    "id": "a35-setup-key-generating",
+    "product": "admin",
+    "title": "首次初始化 · 密钥创建中",
+    "route": "/admin/setup/issuer",
+    "state": "服务端生成中 · 不重复请求",
+    "file": "png/admin/a35-setup-key-generating.png",
+    "width": 2880,
+    "height": 2000
+  },
+  {
     "id": "w01-welcome",
     "product": "wallet",
     "title": "初始化钱包",

@@ -1,5 +1,7 @@
 # 开发与运行
 
+当前运行方式仍要求部署预置管理员和固定 issuer 密钥。空库自动迁移后的 WebUI 首次初始化已完成 [业务与交互设计](../docs/identity-center-bootstrap-design.md)，配套 [a20–a35 设计稿](../docs/gui-design/index.html)；对应后端接口和 Solid 向导尚未实现，本文命令继续适用于当前代码。
+
 要求 Rust 1.95+、Bun、Node.js 24+、Docker Compose v2。钱包首期使用 Windows DPAPI；其他系统不会降级为明文存储。Windows 需安装 Tauri 所需的 MSVC 工具链与 WebView2。
 
 应用部署配置来自进程环境变量，开发时从仓库根 `.env` 读取，进程环境优先。开发 Docker 的数据库、账号、密码、端口、健康检查和数据库初始化配置全部直接定义在 `deploy/compose.dev.yaml`；Docker 启动不读取应用 `.env`。不提交 `.env`、私钥或运行数据。前端仅通过同源 HTTP 或受限 IPC 访问服务，数据库密码、管理员哈希和会话密钥不会进入 Vite 客户端环境。

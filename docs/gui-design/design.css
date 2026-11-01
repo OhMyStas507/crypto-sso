@@ -5,3 +5,33 @@
 html[data-screen="a16-issue-failed"] .timeline-item{margin-bottom:16px}
 html[data-screen="w17-local-settings"] .pref-row{padding:13px 0}
 html[data-screen="w29-proof-result"] .codebox{height:210px!important}
+
+/* First-run setup reuses the authentication layout and shared form components. */
+.setup-label{margin-left:auto;font-size:11px;font-weight:400;color:var(--muted)}
+.setup-main{width:960px;margin:36px auto 0}
+.setup-progress{display:flex;align-items:center;gap:16px;margin-bottom:37px;padding-bottom:24px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)}
+.setup-progress>span{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.setup-progress .active{color:var(--text);font-weight:550}
+.setup-progress .active .step-num{border-color:#b4afd9;color:var(--accent)}
+.setup-progress .connector{height:1px;background:var(--line);flex:1}
+.setup-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:27px}
+.setup-heading h1{font-size:23px;font-weight:620;letter-spacing:-.65px;margin:0}
+.setup-columns{display:grid;grid-template-columns:minmax(0,640px) minmax(0,250px);gap:70px}
+.setup-aside{border-left:1px solid var(--line);padding-left:23px;color:var(--secondary)}
+.setup-aside .section-title{color:var(--text)}
+.setup-status{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);font-size:11px}
+.setup-status>span:first-child{color:var(--muted)}
+.setup-form .kv{grid-template-columns:128px 1fr}
+.setup-form .section{margin-bottom:23px}
+.setup-form .field{margin-bottom:17px}
+.setup-form p,.setup-aside p{font-size:12px;line-height:23px;margin:0 0 15px}
+.setup-form .section-title .btn{height:25px;font-size:11px}
+.setup-form .pref-row{padding:12px 0;min-height:57px}
+.setup-choice{border:1px solid var(--line);border-radius:7px;padding:18px;display:flex;align-items:center;gap:12px;font-size:12px}
+.setup-choice .hint{font-size:11px;line-height:20px;margin-top:7px;color:var(--muted)}
+.setup-choice .badge{margin-left:auto}
+.setup-confirm{display:flex;align-items:center;gap:9px;border-top:1px solid var(--line);padding-top:18px;font-size:12px}
+.setup-next{font-size:12px;line-height:29px;color:var(--secondary);padding-left:20px;margin:0}
+.setup .auth-foot{padding-top:20px}
+html[data-screen="a25-setup-review"] .setup-form .kv>div{min-height:32px;padding:6px 0}
+html[data-screen="a25-setup-review"] .setup-form .section{margin-bottom:20px}

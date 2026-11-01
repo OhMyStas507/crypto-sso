@@ -1,5 +1,5 @@
 const A=(active,title,body,overlay='',parent='')=>shell('admin',active,title,body,overlay,parent);
-const adminLogin=(error=false)=>auth('admin','登录管理后台',`${error?notice('账号或密码不正确，请重新输入。','danger','','exclamation-circle'):''}${field('管理员账号','admin@example.org')}${field('密码','••••••••••••','',error?'error':'','eye-slash')}${B('登录','primary wide') }<div class="auth-info">使用部署时创建的管理员账号登录。</div>`);
+const adminLogin=(error=false)=>auth('admin','登录管理后台',`${error?notice('账号或密码不正确，请重新输入。','danger','','exclamation-circle'):''}${field('管理员账号','admin@example.org')}${field('密码','••••••••••••','',error?'error':'','eye-slash')}${B('登录','primary wide') }<div class="auth-info">使用初始化时创建的管理员账号登录。</div>`);
 add('a01-login','admin','管理员登录','/admin/login',()=>adminLogin());
 add('a02-overview','admin','概览','/admin/overview',()=>A('overview','概览',`${head('概览',B('查看服务设置','','sliders2'))}${stats([['待审申请','12','3 份将于 24 小时内到期'],['等待签发','4','已批准，等待任务处理'],['签发失败','2','可重试原申请'],['已签发','128','累计核验成员 128 人']])}<div class="two-col"><div>${section('待处理申请',table(['申请人 / 请求 ID','提交时间','状态',''],[
  ['<strong>林知远</strong><div class="sub mono">req_7d3a8f20c194</div>','今天 10:24',badge('等待审批','','clock'),B('查看')],

@@ -30,6 +30,7 @@ try{
  page.on('pageerror',e=>failures.push({type:'script',message:e.message}));
  await page.goto(base+'/screen.html?manifest=1');
  const manifest=await page.evaluate(()=>window.designScreens.map(({render,...s})=>s));
+ if(failures.length)throw new Error('Design source errors: '+JSON.stringify(failures));
  const icons=await page.evaluate(()=>[...new Set(window.designScreens.flatMap(s=>[...s.render().matchAll(/data-icon="([^"]+)"/g)].map(m=>m[1])))]);
  await fs.mkdir(path.join(dir,'assets/icons'),{recursive:true});
  for(const icon of icons)await fs.copyFile(path.join(repo,'wallet/node_modules/bootstrap-icons/icons',icon+'.svg'),path.join(dir,'assets/icons',icon+'.svg'));
@@ -68,12 +69,12 @@ try{
  const cards=(product)=>manifest.filter(s=>s.product===product).map(s=>`<article data-title="${escape(s.title+s.state)}"><a href="${s.file}" target="_blank"><img loading="lazy" src="${s.file}" alt="${escape(s.title)}"></a><div class="caption"><span><strong>${s.id} · ${escape(s.title)}</strong><small>${escape(s.state)}</small></span><span class="links"><a href="screen.html?screen=${s.id}">查看界面</a><a href="${s.file}" download>PNG ↓</a></span></div><code>${escape(s.route)}</code></article>`).join('');
  await fs.writeFile(path.join(dir,'index.html'),`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crypto SSO · GUI 设计图集</title><style>*{box-sizing:border-box}body{margin:0;background:#fafafa;color:#292930;font:13px 'Segoe UI','Microsoft YaHei',sans-serif}header{padding:28px 40px;border-bottom:1px solid #e4e4e9;background:white;position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:25px}h1{font-size:19px;font-weight:600;margin:0}a{color:#665dc1;text-decoration:none}header span{color:#999;font-size:12px;margin-left:auto}input{width:220px;padding:9px;border:1px solid #ddd;border-radius:5px;font:inherit}main{padding:12px 40px 50px;max-width:1920px;margin:auto}h2{font-size:16px;font-weight:550;margin:30px 0 20px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:25px}article{border:1px solid #dddde5;border-radius:7px;overflow:hidden;background:white}article img{display:block;width:100%;border-bottom:1px solid #eee}article .caption{padding:15px 17px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px}strong{font-size:12px;font-weight:550}small{display:block;color:#999;font-size:10px;margin-top:7px}.links{display:flex;gap:15px;white-space:nowrap;font-size:11px}code{display:block;padding:0 17px 16px;color:#999;font-size:10px}footer{margin-top:30px;color:#999;font-size:11px;line-height:22px}@media(max-width:800px){.grid{grid-template-columns:1fr}header{padding:20px;flex-wrap:wrap}main{padding:10px 20px}.links{gap:9px}}</style><header><h1>Crypto SSO · GUI 设计图集</h1><a href="#admin">管理端 · ${manifest.filter(s=>s.product==='admin').length}</a><a href="#wallet">钱包 · ${manifest.filter(s=>s.product==='wallet').length}</a><span>${manifest.length} 张设计图 · PNG 2×</span><input id="q" placeholder="搜索页面或状态"></header><main><h2 id="admin">身份中心管理端</h2><div class="grid">${cards('admin')}</div><h2 id="wallet">本地身份钱包</h2><div class="grid">${cards('wallet')}</div><footer>根据业务流程与项目结构文档绘制。统一浅色设计，使用 Bootstrap Icons 1.13.2。<br>此图集为静态设计；示例数据表示不同业务阶段，接口与密码学消息为视觉示意。</footer></main><script>document.querySelector('#q').addEventListener('input',e=>document.querySelectorAll('article').forEach(a=>a.hidden=!a.dataset.title.includes(e.target.value)))</script></html>`);
  const thumbW=432,thumbH=300,labelH=46,margin=24,cols=3;
- for(const product of ['admin','wallet']){
-  const items=manifest.filter(s=>s.product===product);
+ for(const product of ['admin','wallet','setup']){
+  const items=manifest.filter(s=>product==='setup'?s.id.includes('-setup-'):s.product===product);
   const width=margin+(thumbW+margin)*cols;
   const height=84+Math.ceil(items.length/cols)*(thumbH+labelH+margin)+margin;
   const composites=[];
-  const header=Buffer.from(`<svg width="${width}" height="70"><rect width="100%" height="100%" fill="#fafafa"/><text x="24" y="42" fill="#34343e" font-family="Segoe UI,Microsoft YaHei" font-size="22">Crypto SSO · ${product==='admin'?'身份中心管理端':'本地身份钱包'} / ${items.length} screens</text></svg>`);
+  const header=Buffer.from(`<svg width="${width}" height="70"><rect width="100%" height="100%" fill="#fafafa"/><text x="24" y="42" fill="#34343e" font-family="Segoe UI,Microsoft YaHei" font-size="22">Crypto SSO · ${product==='setup'?'首次初始化':product==='admin'?'身份中心管理端':'本地身份钱包'} / ${items.length} screens</text></svg>`);
   composites.push({input:header,left:0,top:0});
   for(let i=0;i<items.length;i++){
    const s=items[i],x=margin+(i%cols)*(thumbW+margin),y=84+Math.floor(i/cols)*(thumbH+labelH+margin);
@@ -90,6 +91,12 @@ try{
   previews.push({input:await sharp(path.join(dir,s.file)).resize(1080,750,{fit:'contain',background:'#fff'}).png().toBuffer(),left:0,top:i*774});
  }
  await sharp({create:{width:1080,height:1524,channels:3,background:'#eeeef2'}}).composite(previews).png().toFile(path.join(dir,'preview.png'));
+ const setupPreviews=[];
+ for(const [i,id]of ['a21-setup-admin','a24-setup-issuer-ready','a25-setup-review','a27-setup-complete'].entries()){
+  const s=manifest.find(s=>s.id===id);
+  setupPreviews.push({input:await sharp(path.join(dir,s.file)).resize(864,600).png().toBuffer(),left:(i%2)*888,top:Math.floor(i/2)*624});
+ }
+ await sharp({create:{width:1752,height:1224,channels:3,background:'#eeeef2'}}).composite(setupPreviews).png().toFile(path.join(dir,'setup-preview.png'));
  console.log(JSON.stringify({total:manifest.length,icons:icons.length,routeCoverage,failures},null,2));
  if(failures.length)process.exitCode=1;
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
