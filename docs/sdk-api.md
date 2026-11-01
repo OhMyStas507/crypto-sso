@@ -17,10 +17,14 @@ sdk/
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs                # 共享值类型、协议常量、Core Error
+│       ├── claims.rs             # Claims、ClaimKeys 与属性校验
+│       ├── values.rs             # 标识、哈希与披露值类型
+│       ├── error.rs              # Core Error
 │       ├── wire.rs               # 交换消息、严格 JSON 编解码
 │       ├── limits.rs             # ClaimsLimits、共享静态配置与初始化接口
 │       ├── origin.rs             # origin 规范化
 │       ├── secret.rs             # SecretBytes
+│       ├── tests.rs              # core 内联测试
 │       └── internal/             # 固定参数、转录、群元素、公共数学函数
 ├── issuer/                       # crypto-sso-issuer
 │   ├── Cargo.toml
@@ -786,7 +790,7 @@ tx.commit()?;
 
 原 `sdk` 模板 crate 已迁移到上述四个目录，`sdk/` 本身只作为目录，不再有 `[package]` 或第二个 `[workspace]`。根 workspace 及调用方 manifest 已按下述结构配置。
 
-仓库根目录的目标配置：
+仓库根目录的当前 workspace 配置（成员与根 `Cargo.toml` 一致）：
 
 ```toml
 [workspace]
@@ -799,6 +803,10 @@ members = [
     "issuer-service",
     "wallet/src-tauri",
     "dev-utils",
+    "utils",
+    "crates/identity-api",
+    "crates/telemetry",
+    "examples/relying-party",
 ]
 ```
 

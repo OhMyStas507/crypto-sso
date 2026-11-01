@@ -24,7 +24,7 @@
 
 业务流程以本文为准；密码学类型和编码以 [SDK API](sdk-api.md)、[协议补充](../sdk/PROTOCOL.md) 为准。业务 HTTP API 的 `/api/v1` 与密码学协议 v1 分别版本化。
 
-后端模块、Solid 前端、钱包 IPC、页面路由及目标目录详见 [项目结构与模块设计](identity-center-wallet-project-structure.md)。
+当前后端模块、Solid 前端、钱包 IPC、页面路由及实际目录详见 [项目结构与模块说明](identity-center-wallet-project-structure.md)。
 
 ### 1.1 首期明确采用的规则
 

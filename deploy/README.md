@@ -73,7 +73,7 @@ bun run --cwd examples/relying-party/web build
 
 完整变量名称见根 `.env.example`。数据库迁移在启动时自动执行，无需开关或预先运行迁移命令。实现遵循 [Toasty 0.11 Schema Management](https://tokio-rs.github.io/toasty/0.11.0/guide/schema-management.html)：用官方 `ToastyCli` 从注册模型生成 SQL、快照和 `history.toml`，通过 `toasty::embed_migrations!()` 编译进程序，启动时调用 `MigrationSet::apply`。已应用版本由 Toasty 的 `__toasty_migrations` 表维护，程序没有自建迁移执行器或迁移历史表。
 
-模型定义集中在 `issuer-service/src/models.rs`，`store.rs` 只负责统一注册、连接和启动迁移。修改模型后，在仓库根运行：
+模型按业务对象定义在 `issuer-service/src/models/`：`settings.rs`、`enrollment.rs`、`audit.rs` 和 `session.rs`，由 `mod.rs` 统一导出；`store.rs` 负责注册、连接和启动迁移。业务事务位于 `viewmodels/` 与 `worker.rs`，HTTP 适配位于 `views/`。修改模型后，在仓库根运行：
 
 ```powershell
 cargo run -p issuer-service --bin issuer-db -- migration generate --name describe_change

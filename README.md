@@ -29,19 +29,29 @@
 - [ ] 整理ai的垃圾代码
 
 ## 仓库文件夹划分
-dev-utils/ 用于开发的工具
-docs/ 文档和开发资料
-issuer-service/ 登录中心后端实现
-issuer-service-webui/ 登录中心前端实现
-sdk/ 算法和验证机制实现
-utils/ 命令行工具（如生成 issuer 私钥，见 [使用说明](utils/README.md)）
-wallet/ 用户本地钱包
+
+| 目录 | 当前职责 |
+|---|---|
+| `crates/identity-api/` | 共享 HTTP 业务契约与 TypeScript 类型导出 |
+| `crates/telemetry/` | 共享 tracing 日志初始化 |
+| `packages/identity-api-types/` | 生成的 TypeScript HTTP 类型包 |
+| `issuer-service/` | 登录中心后端，按 `models / viewmodels / views` 划分 MVVM |
+| `issuer-service-webui/` | 独立的 Solid 管理前端 |
+| `wallet/src/` | 钱包 Solid 前端与 IPC bridge |
+| `wallet/src-tauri/` | 钱包 Rust Engine、加密存储与 Tauri 入口 |
+| `examples/relying-party/` | 独立应用后端、登录前端与完整端到端测试 |
+| `sdk/` | core、issuer、holder、verifier 四个密码学协议 crate |
+| `utils/` | 签发密钥生成等命令行工具，见 [使用说明](utils/README.md) |
+| `dev-utils/` | 开发资料抓取工具 |
+| `scripts/` | 环境初始化、类型生成校验、UI 与集成检查 |
+| `deploy/` | 开发数据库 Compose、管理前端网关模板与部署说明 |
+| `docs/` | 业务、当前代码结构、SDK 和静态 GUI 资料 |
 
 SDK 已按 core、issuer、holder、verifier 四个 crate 划分，支持带属性的 BBS+ 盲签发与选择披露。使用方式和检查命令见 [SDK README](sdk/README.md)，测试文档全部 89 个编号的覆盖入口见 [测试覆盖清单](sdk/TEST-COVERAGE.md)。
 
 身份验证中心与钱包的业务设计见 [业务流程文档](docs/identity-center-wallet-business-flow.md)，包含服务设置、Claims 默认建议 API、钱包注册、人工审批与签发、凭证保存及应用登录续接。注册中心、Solid 管理后台、Tauri 钱包和最小应用登录示例已实现；当前启动方式见 [开发与运行](deploy/README.md)。
 
-具体代码模块、前端页面与路由、HTTP/IPC 契约和目标目录见 [项目结构与模块设计](docs/identity-center-wallet-project-structure.md)，采用 PostgreSQL、Salvo、Toasty、Solid 与 Tauri。
+当前代码模块、实际目录、页面路由及 HTTP/IPC 契约见 [项目结构与模块说明](docs/identity-center-wallet-project-structure.md)，采用 PostgreSQL、Salvo、Toasty、Solid 与 Tauri。
 
 ## 开发数据库
 
@@ -73,7 +83,7 @@ bun scripts/dev-compose.mjs down -v
 
 应用基础配置从环境变量读取，开发时使用根目录 `.env`；Docker 基础设施单独由 Compose 文件配置。执行 `bun scripts/setup-dev.js` 可生成应用开发配置、固定签发密钥及管理员密码；完整准备、启动和验收步骤见 [部署说明](deploy/README.md)。
 
-- 注册中心使用 Salvo 的显式路由与独立 Handler、Session 和 CSRF 中间件；业务数据使用独立 Toasty 模型，以原生 `create!`、`get_by_*`、更新/删除构造器及关联查询持久化至 PostgreSQL。中心和示例应用启动时自动应用 Toasty 迁移，完成后再接收请求；业务直接使用 Toasty 原生事务、Serializable 隔离与自动回滚。应用日志使用 `tracing`，通过 `RUST_LOG` 配置级别。
+- 注册中心使用 MVVM：`src/models/` 定义持久化实体与领域规则，`src/viewmodels/` 编排业务事务及明确类型的展示契约，`src/views/` 组装 Salvo 路由、Handler、Session 和 CSRF 中间件；`worker.rs` 执行后台签发。业务数据以 Toasty 原生 CRUD 与关联查询持久化至 PostgreSQL。中心和示例应用启动时自动应用迁移，完成后再接收请求；业务写事务使用 Serializable 隔离与自动回滚。应用日志使用 `tracing`，通过 `RUST_LOG` 配置级别。
 - 管理后台实现服务设置、Claims 建议、人工核验与审批、成员查询、签发台账和审计。
 - 钱包实现中心指纹固定、可编辑 Claims 草稿、加密申领恢复、领证与本地凭证、受信应用和选择披露。
 - `examples/relying-party` 提供独立应用挑战、证明验真、原子消费与应用会话闭环；已有凭证登录无需联系中心。

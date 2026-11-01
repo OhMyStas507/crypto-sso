@@ -1,89 +1,86 @@
-# 身份中心与钱包项目结构、模块及页面设计
+# 身份中心与钱包项目结构、模块及页面
 
-文档状态：结构设计与实现约定。第 4 节补充 2026-11-01 的后端 MVVM 实现；其他目录树仍为能力规划。
+文档状态：当前代码结构说明，按 2026-11-01 的仓库实现核对。目录树只列已存在的主要源码、配置和验证入口，省略依赖、构建缓存及部分图片资源。
 
-日期：2026-10-30。业务基线：[身份验证中心与钱包业务流程](identity-center-wallet-business-flow.md)。技术栈固定为 PostgreSQL、Salvo、Toasty、Solid 和 Tauri；密码学部分沿用现有 SDK v0.1 / 协议 v1。
+更新日期：2026-11-01。业务基线：[身份验证中心与钱包业务流程](identity-center-wallet-business-flow.md)。技术栈固定为 PostgreSQL、Salvo、Toasty、Solid 和 Tauri；密码学部分沿用现有 SDK v0.1 / 协议 v1。
 
 ## 1. 总体组织方式
 
-保留仓库现有的 `issuer-service`、`issuer-service-webui`、`wallet` 和四个 SDK crate。身份中心采用一个后端服务，在 crate 内划分领域规则、用例、HTTP、数据库及后台任务模块。钱包采用 Solid 界面和 Tauri Rust 后端，由 Rust 统一处理网络、秘密、存储与 SDK 调用。
+仓库使用根 Cargo workspace 管理 SDK、身份中心后端、钱包 Rust 后端、示例应用和共享库。中心后端按 MVVM 划分，管理后台独立构建；钱包采用 Solid 界面和 Tauri Rust 后端，网络、秘密存储与 SDK 调用由 Rust 处理。
 
-增加一个小型共享业务契约 crate 和一个生成的 TypeScript 类型包。两个前端共享接口类型，各自维护页面、业务状态及组件；首期不建设独立的通用 UI 组件库。
-
-| 单元 | 运行形式 | 主要依赖 | 对外边界 |
-|---|---|---|---|
-| `issuer-service` | Salvo HTTP 服务，进程内运行签发等后台任务 | issuer SDK、业务契约、Toasty、PostgreSQL | 公开申请 API、管理员 API（不提供前端资源） |
-| `issuer-service-webui` | Solid SPA | 生成的业务契约、Solid Router、Solid Query | 独立部署；开发由 Vite 反向代理 API，生产由前端网关转发 API |
-| `wallet/src-tauri` | 本地 Tauri Rust 进程 | holder SDK、业务契约、HTTP 客户端、系统密钥保护 | 受限 Tauri commands 与状态事件 |
-| `wallet/src` | Solid SPA，运行于 Tauri WebView | 生成的 IPC 类型、部分业务契约、Solid Router | 通过 IPC 使用钱包，展示用户可读信息 |
-| `crates/identity-api` | 被中心和钱包引用的 Rust 库 | Serde 及原始 JSON 包装 | 定义 HTTP 业务 DTO、错误码和分页结构 |
-| `packages/identity-api-types` | 本地 TypeScript 类型包 | 从业务契约生成 | 提供 HTTP DTO 类型，不持有运行时状态 |
-| `examples/relying-party` | 独立的最小应用后端与 Solid 登录页 | verifier SDK、Salvo、Toasty、PostgreSQL | 验收挑战、证明与应用会话闭环 |
+| 单元 | 入口与职责 | 主要依赖 |
+|---|---|---|
+| `issuer-service` | `src/main.rs` 启动 Salvo API 与签发 worker；`models / viewmodels / views` 划分业务 | issuer SDK、identity-api、telemetry、Toasty、PostgreSQL |
+| `issuer-service-webui` | `src/App.tsx` 组装管理路由、布局、会话与 QueryClient | Solid Router、Solid Query、生成的 HTTP 类型 |
+| `wallet/src-tauri` | `src/lib.rs` 注册 IPC、启动同步；`engine.rs` 执行钱包用例 | holder SDK、identity-api、telemetry、Tauri、reqwest、DPAPI |
+| `wallet/src` | `App.tsx` 组装 HashRouter、锁定门禁与事件订阅 | Solid Router、Solid Query、类型化 IPC bridge |
+| `crates/identity-api` | `src/lib.rs` 定义共享 HTTP DTO；example 导出 TypeScript | Serde、ts-rs |
+| `crates/telemetry` | `src/lib.rs` 统一初始化 tracing 和 RUST_LOG 过滤 | tracing、tracing-subscriber |
+| `packages/identity-api-types` | `src/generated.ts` 提供生成的 HTTP 类型 | identity-api 导出结果 |
+| `examples/relying-party` | `src/lib.rs` 验真与消费挑战，`http.rs` 适配 API，`web/src/index.tsx` 提供登录页 | verifier SDK、issuer-service 的存储/会话工具、Toasty、独立 PostgreSQL 数据库 |
 
 ```mermaid
 flowchart TD
-    AdminUI[Solid 管理后台] -->|HTTP DTO| Http[Salvo HTTP 层]
-    Http --> UseCases[中心用例层]
-    Jobs[签发 / 过期后台任务] --> UseCases
-    UseCases --> Domain[领域状态与策略]
-    UseCases --> Ports[原子持久化与签发能力接口]
-    PgAdapter[Toasty PostgreSQL 适配层] -.实现.-> Ports
-    Signer[issuer SDK 适配层] -.实现.-> Ports
-    PgAdapter --> PG[(PostgreSQL)]
-    WalletUI[Solid 钱包界面] -->|IPC| Commands[Tauri commands]
-    Commands --> WalletCases[钱包用例]
-    WalletCases --> Holder[holder SDK]
-    WalletCases --> Vault[本地加密钱包文件]
-    WalletCases --> Client[中心 HTTP 客户端]
-    Client --> Http
-    Contracts[共享 HTTP 契约] -.约束.-> Http
-    Contracts -.约束.-> Client
-    Contracts -.生成类型.-> AdminUI
+    AdminUI[Solid 管理后台] -->|HTTP| Views[issuer-service/views]
+    Views --> VM[issuer-service/viewmodels]
+    VM --> Models[issuer-service/models]
+    VM --> SDK[issuer SDK]
+    VM --> Store[store: 注册 / 连接 / 迁移]
+    Worker[worker: 签发租约与后台任务] --> Models
+    Worker --> SDK
+    Store --> PG[(PostgreSQL)]
+    Models --> PG
+    WalletUI[Solid 钱包] -->|wallet_command| Engine[wallet Engine]
+    Engine --> Holder[holder SDK]
+    Engine --> Vault[storage: DPAPI / AES-GCM]
+    Engine -->|HTTP| Views
+    Contracts[identity-api / 生成的 TS 类型] -.约束.-> Views
+    Contracts -.约束.-> WalletUI
 ```
 
-依赖约束：SDK 保持现有角色边界；业务 DTO 不加入 SDK core。后端领域规则不引用 Salvo、Toasty 或前端 DTO；HTTP handler 和 Tauri command 只做入参、授权及结果映射，业务过程进入用例层。
+SDK 保持角色边界；业务 DTO 不加入 SDK core。中心 View 处理 HTTP、状态码、Cookie 和会话适配，ViewModel 拥有业务事务，Model 定义实体与领域规则。会话存储由 `session_store.rs` 对接 Salvo。钱包 IPC 与存储按其当前模块组织，不套用中心的 MVVM 目录。
 
 ## 2. 仓库总体目录
 
-以下均为目标结构；只在实现对应能力时创建文件。`dist`、运行数据和生成缓存不提交版本库。
+以下为现有目录；`dist`、运行数据和生成缓存不提交版本库。
 
 ```text
 crypto-sso/
-├── Cargo.toml                         # 继续使用根 Rust workspace
-├── Cargo.lock
-├── sdk/                               # 现有 core / issuer / holder / verifier
+├── Cargo.toml  # 根 Rust workspace
+├── Cargo.lock  # Rust 依赖锁
+├── Toasty.toml  # 迁移 CLI 产物目录
+├── .env.example  # 应用环境变量示例
+├── sdk/
+│   ├── core/  # 共享协议与密码学基础
+│   ├── issuer/  # 签发角色
+│   ├── holder/  # 持有角色
+│   └── verifier/  # 验真角色
 ├── crates/
-│   └── identity-api/                   # HTTP 业务契约，不包含 SDK 数学实现
+│   ├── identity-api/  # 共享 HTTP 契约
+│   └── telemetry/  # 日志初始化
 ├── packages/
-│   └── identity-api-types/             # 从 Rust 契约生成的 TS 类型
-├── issuer-service/                    # 中心 Salvo 服务
-├── issuer-service-webui/              # 中心 Solid 管理后台
+│   └── identity-api-types/  # 生成的 TypeScript HTTP 类型
+├── issuer-service/  # 中心后端
+├── issuer-service-webui/  # 独立管理 SPA
 ├── wallet/
-│   ├── src/                           # 钱包 Solid 界面
-│   └── src-tauri/                     # 钱包本地 Rust 后端
+│   ├── src/  # 钱包 Solid 界面
+│   └── src-tauri/  # 钱包 Rust 后端
 ├── examples/
 │   └── relying-party/
-│       ├── Cargo.toml                 # 独立 verifier 示例后端
-│       ├── src/
-│       ├── toasty/                    # 示例自己的数据库迁移
-│       └── web/                       # Solid 最小应用登录页
-├── utils/                             # 运维 CLI；沿用密钥生成工具
-├── dev-utils/                         # 沿用现有开发工具
+│       ├── src/  # 独立应用 API 与验真
+│       ├── web/  # 独立应用登录页
+│       └── tests/  # 完整端到端验收
+├── utils/  # 签发密钥生成工具
+├── dev-utils/  # 开发资料抓取工具
 ├── deploy/
-│   ├── compose.dev.yaml               # 开发 PostgreSQL 及数据库初始化
-│   ├── issuer.env.example             # 配置名称与非秘密示例
-│   └── README.md                      # 启动、迁移、备份与部署说明
-├── scripts/
-│   ├── check-contracts.ps1            # 契约生成结果检查
-│   └── check-integration.ps1          # 集成验收入口
-└── docs/
-    ├── identity-center-wallet-business-flow.md
-    ├── identity-center-wallet-project-structure.md
-    ├── sdk-api.md
-    └── sdk-test.md
+│   ├── compose.dev.yaml  # 开发数据库及初始化
+│   ├── nginx.admin.conf.template  # 管理前端网关模板
+│   └── README.md  # 启动、迁移与部署说明
+├── scripts/  # 环境初始化、构建与验收入口
+└── docs/  # 业务、结构、SDK 与静态 GUI 文档
 ```
 
-新增加的业务契约和示例 Rust 包纳入根 Cargo workspace；SDK 的正常依赖图保持原状。前端沿用现有 Bun 包管理及锁文件；类型包使用本地依赖，不要求首期搬迁为新的 JavaScript monorepo。
+管理后台、钱包与示例应用前端分别维护 Bun 配置及锁文件。共享类型包由本地依赖引用，未建立独立的通用 UI 组件库。
 
 ## 3. 共享契约与类型归属
 
@@ -91,52 +88,45 @@ crypto-sso/
 
 ```text
 crates/identity-api/
-├── Cargo.toml                         # 建议包名 crypto-sso-identity-api
+├── Cargo.toml  # crypto-sso-identity-api
 ├── src/
-│   ├── lib.rs
-│   ├── common.rs                      # 分页、修订号、时间及追踪信息
-│   ├── public.rs                      # ServiceInfo、ClaimHints
-│   ├── enrollments.rs                 # 申请提交、状态、领取响应
-│   ├── admin.rs                       # 登录、设置、审批、成员及台账 DTO
-│   ├── errors.rs                      # 稳定业务错误码及 API 错误结构
-│   └── sdk_json.rs                    # 内嵌 SDK 原始 JSON 的透明包装
-├── examples/
-│   └── export_types.rs                # 导出普通业务 DTO 的 TS 类型
-└── tests/
-    └── json_contracts.rs              # 严格解析、字段及错误码契约
-
-packages/identity-api-types/
-├── package.json
-├── README.md                          # 生成入口与使用约定
-└── src/
-    ├── index.ts
-    └── generated.ts                   # 生成并提交，禁止手工修改
+│   └── lib.rs  # Claims、设置、申请、审核、错误与分页契约
+└── examples/
+    └── export_types.rs  # HTTP TypeScript 类型导出
 ```
 
-普通业务 DTO 以 Rust 定义为源，建议使用 `ts-rs` 导出 TS。SDK 原始消息字段在 TS 中作为不可信 JSON 值处理，最终由 Rust 的 SDK wire 解析；不能为方便生成类型，把 SDK 消息改成宽松的普通 Serde 对象。
+```text
+packages/identity-api-types/
+├── package.json  # 本地类型包入口
+├── README.md  # 类型生成说明
+└── src/
+    └── generated.ts  # 生成并提交；禁止手工修改
+```
 
-SDK JSON 包装保留内层原始对象，避免 HTTP 外层先反序列化为字典、吞掉重复字段。中心接收 `EnrollmentRequest`、钱包接收 `BlindCredential` 及挑战、示例接收 `Presentation` 时，都要进入各自角色重导出的严格 wire 入口。
+共享 HTTP 契约目前集中在 `crates/identity-api/src/lib.rs`，未拆成 common、public、admin 等文件。中心专用请求、响应及审核动作类型位于 `issuer-service/src/viewmodels/contracts.rs`；管理前端的 `Enrollment`、`Member`、`Session`、`Overview` 展示接口目前仍在 `issuer-service-webui/src/api.ts` 声明。
 
-| 数据类型 | 定义位置 | 约束 |
+`cargo run -p crypto-sso-identity-api --example export_types` 生成 HTTP 类型；`cargo run -p wallet --example export_ipc` 生成钱包 IPC 类型。`scripts/check-contracts.ps1` 重新生成并比较两个文件内容。
+
+SDK 消息保留原始 JSON，最终进入各角色的严格 wire 解析器，避免外层对象解析吞掉内层重复字段。TypeScript 中的 SDK 公共消息保持 `unknown`。
+
+| 数据类型 | 当前定义位置 | 边界 |
 |---|---|---|
-| SDK 公共交换消息 | 现有 SDK core | 编码和密码学含义沿用现有协议 |
-| HTTP 请求、响应及公开错误码 | `identity-api` | 中心、钱包和管理后台共同遵循 |
-| ORM 模型 | 中心 `models` | 不直接返回给 HTTP 或前端 |
-| 中心领域规则 | 中心 `models/domain.rs` | 表达状态、审批及签发规则，管理员会话作为服务端身份模型保存 |
-| 页面表单模型 | 各前端 `features/*/model.ts` | 包括脏状态、校验和展示，不复制服务端权威状态 |
-| IPC DTO 和事件载荷 | 钱包 Rust `commands/dto` | 单独生成到钱包 `bridge`；不加入公开 HTTP 契约 |
-| 钱包秘密与本地记录 | 钱包 Rust `domain`、`storage` | 不导出通用前端读取接口 |
+| SDK 公共交换消息 | `sdk/core`，由各角色重导出 | 不复制另一套消息类型 |
+| 共享 HTTP DTO | `crates/identity-api/src/lib.rs` | 同时供中心和钱包使用 |
+| 中心专用 ViewModel 契约 | `issuer-service/src/viewmodels/contracts.rs` | 具体请求、响应、列表查询与 ReviewAction |
+| ORM 模型与领域规则 | `issuer-service/src/models` | 查询结果转换为展示类型后返回 |
+| 管理前端接口与表单状态 | `issuer-service-webui/src/api.ts`、`src/pages` | 表单草稿由页面 signals 保存 |
+| 钱包 IPC 展示 DTO | `wallet/src-tauri/src/dto.rs` | 输出到 `wallet/src/bridge/generated.ts` |
+| 钱包秘密与持久化记录 | `wallet/src-tauri/src/model.rs`、`storage.rs` | holder、pending 和访问秘密不导出前端 |
 
-契约生成检查只校验业务字段、命令与事件的一致性，不把密码、Bearer 值、holder 或 pending 内容写成测试快照或生成产物。
+### 3.2 后台只读查询
 
-### 3.2 首期补充的后台只读查询
-
-现有业务 API 足以完成注册和审批。为了支持实际页面，补充下列聚合查询，并保持详情数据复用：
+当前查询由 `viewmodels/queries.rs` 实现；以下为页面使用的聚合接口：
 
 | API | 使用页面 | 内容 |
 |---|---|---|
 | `GET /api/v1/admin/overview` | 概览 | 开关、密钥状态、待审/签发失败数量、近期处理摘要 |
-| `GET /api/v1/admin/members` | 成员查询、审批中的成员选择器 | 已核验成员的分页检索，不按钱包自报信息自动创建关联 |
+| `GET /api/v1/admin/members` | 成员列表 | 已核验成员的分页检索，不按钱包自报信息自动创建关联 |
 | `GET /api/v1/admin/members/{member_ref}` | 成员详情 | 内部成员标识、核验摘要、签发名额及关联申请 |
 
 首期成员页面以查询为主。建立新成员及绑定可信资料发生在批准用例的事务中；无需增加一套独立的成员账号、密码、角色和用户自助登录系统。
@@ -175,109 +165,19 @@ issuer-service/src/
 ├── worker.rs                         # 持久化签发租约和后台调度
 ├── config.rs                         # 部署配置
 ├── security.rs                       # 令牌、摘要和时间工具
-└── error.rs                          # 稳定错误与 HTTP 错误映射
+├── error.rs                          # 稳定错误与 HTTP 错误映射
+├── lib.rs                            # 模块与兼容路径导出
+├── main.rs                           # 配置、SDK 限制、HTTP 和 worker 启动
+└── bin/
+    ├── issuer-db.rs                  # Toasty 官方迁移 CLI
+    └── hash-password.rs              # 管理员密码哈希工具
 ```
 
 HTTP handler 统一使用 `<操作对象>_<动作>` 命名，例如 `enrollment_submit`、`enrollment_approve`、`settings_save`、`admin_session_create`。签名返回具体的 `Json<T>`、`Json<Page<T>>` 或明确的中间件结果类型，禁止使用 `Json<Value>` 等动态类型。带 ETag 的属性提示接口返回 `ClaimHintsReply` 枚举，分别渲染 `ClaimHintsResponse` 或无响应体的 304。共享契约仍定义在 `crates/identity-api`；后端专用展示类型定义在 `viewmodels/contracts.rs`。SDK 交换消息保留原始 JSON，由 SDK wire 入口严格解析。
 
-现有 URL、JSON 字段及数据库映射保持兼容。`http` 是 `views` 的兼容导出；旧 Rust 调用方使用审核用例时，需将字符串动作替换为 `ReviewAction`，并读取具体响应类型的字段。钱包的通用 `wallet_action` 已拆为 `enrollment_status`、`enrollment_cancel` 和 `credential_get`。
+现有 URL、JSON 字段及数据库映射保持兼容。`http` 是 `views` 的兼容导出；旧 Rust 调用方使用审核用例时，需将字符串动作替换为 `ReviewAction`，并读取具体响应类型的字段。中心原先面向钱包的 `Application::wallet_action` 已拆为 `enrollment_status`、`enrollment_cancel` 和 `credential_get`。
 
-以下目录树保留为早期能力规划，当前扩展以以上 MVVM 结构为准：
-
-```text
-issuer-service/
-├── Cargo.toml
-├── src/
-│   ├── main.rs                        # 读取启动参数，启动 runtime
-│   ├── lib.rs                         # 供集成测试复用组装入口
-│   ├── bootstrap.rs                   # 初始化 SDK 限制、DB、签发器和任务
-│   ├── config.rs                      # 部署配置；与管理页面业务设置分开
-│   ├── state.rs                       # 共享服务依赖和停止信号
-│   ├── domain/
-│   │   ├── mod.rs
-│   │   ├── enrollment.rs              # 状态、版本、可执行迁移
-│   │   ├── approval.rs                # 核验结果、完整核准集合、处理理由
-│   │   ├── member.rs                  # 可信成员及签发名额规则
-│   │   ├── issuance.rs                # 签发任务、代次、租约及提交条件
-│   │   ├── settings.rs                # 服务设置、建议修订及校验
-│   │   ├── audit.rs                   # 业务审计事件
-│   │   └── error.rs                   # 内部业务错误
-│   ├── application/
-│   │   ├── mod.rs
-│   │   ├── ports.rs                   # 业务原子存储、时钟、签发能力边界
-│   │   ├── auth.rs                    # 管理员登录、会话和退出
-│   │   ├── settings.rs                # 设置读取、完整保存与修订冲突
-│   │   ├── enrollment.rs              # 受理、状态查询、取消和领取
-│   │   ├── review.rs                  # 核验、批准、退回与拒绝
-│   │   ├── issuance.rs                # 取任务、调用签发器和提交结果
-│   │   └── queries.rs                 # 概览、成员、台账及审计读模型
-│   ├── http/
-│   │   ├── mod.rs
-│   │   ├── router.rs                  # Salvo 路由注册
-│   │   ├── errors.rs                  # 业务错误到 HTTP 错误的映射
-│   │   ├── middleware/
-│   │   │   ├── mod.rs
-│   │   │   ├── admin_session.rs       # 会话鉴权
-│   │   │   ├── csrf.rs                # 管理写请求来源及 CSRF 校验
-│   │   │   ├── enrollment_access.rs   # 申请 Bearer 校验
-│   │   │   └── request_policy.rs      # 追踪 ID、body 限制及限流
-│   │   └── handlers/
-│   │       ├── mod.rs
-│   │       ├── public.rs              # service-info、claim-hints
-│   │       ├── enrollments.rs         # 钱包申请接口
-│   │       └── admin/
-│   │           ├── mod.rs
-│   │           ├── auth.rs
-│   │           ├── overview.rs
-│   │           ├── settings.rs
-│   │           ├── enrollments.rs
-│   │           ├── members.rs
-│   │           ├── issuances.rs
-│   │           └── audit.rs
-│   ├── infrastructure/
-│   │   ├── mod.rs
-│   │   ├── postgres/
-│   │   │   ├── mod.rs
-│   │   │   ├── db.rs                  # Toasty 模型注册、连接与事务入口
-│   │   │   ├── models/                # 按业务对象分文件的 Toasty Model
-│   │   │   ├── mapping.rs             # ORM、领域与读模型之间的转换
-│   │   │   ├── store.rs               # 持久化能力接口实现
-│   │   │   ├── queries.rs             # 分页、聚合及详情查询
-│   │   │   └── transactions/
-│   │   │       ├── mod.rs
-│   │   │       ├── accept_enrollment.rs
-│   │   │       ├── decide_review.rs
-│   │   │       ├── lease_issuance.rs
-│   │   │       ├── finish_issuance.rs
-│   │   │       └── save_settings.rs
-│   │   ├── sdk/
-│   │   │   ├── mod.rs
-│   │   │   └── issuer.rs              # 导入固定密钥及 issuer SDK 调用
-│   │   └── security/
-│   │       ├── mod.rs
-│   │       ├── password.rs            # 管理员密码哈希
-│   │       └── tokens.rs              # 会话与申请访问秘密校验
-│   ├── workers/
-│   │   ├── mod.rs
-│   │   ├── issuance.rs                # 签发队列轮询、并发限制及恢复
-│   │   ├── expiration.rs              # 待审过期条件更新
-│   │   └── session_cleanup.rs         # 过期管理会话清理
-│   └── bin/
-│       └── bootstrap_admin.rs         # 受控部署环境建立首位管理员
-├── toasty/
-│   ├── migrations/                    # 经审阅的 PostgreSQL 迁移
-│   ├── snapshots/                     # 模型映射快照
-│   └── history.toml                    # Toasty 迁移历史元数据
-└── tests/
-    ├── common/
-    ├── settings_http.rs
-    ├── enrollment_http.rs
-    ├── review_transactions.rs
-    ├── issuance_recovery.rs
-    └── admin_access.rs
-```
-
-这些是一个 crate 内的 Rust 模块。初期不为每个目录创建独立 crate；具体文件可以从少量用例开始，随真实职责增长拆分。
+以上模块属于同一 crate，按真实业务职责扩展。
 
 ### 4.1 模块边界
 
@@ -288,40 +188,38 @@ issuer-service/
 | `models/domain` | 状态迁移、审批条件、设置校验及审计事件构造 | 状态规则使用普通函数，审计通过调用方传入的 Executor 创建 |
 | `models / store` | 类型化 Toasty 模型、统一注册、连接与启动迁移 | CRUD 由用例直接使用框架生成的 API |
 | `sdk/issuer` | 保持固定 issuer、严格 SDK 解析及盲签发 | 使用 issuer crate；不依赖 holder/verifier |
-| `workers` | 调度、退避、租约恢复、服务停止 | 调用与 HTTP 共用的用例，不重复写一套签发逻辑 |
-| `bootstrap` | 配置并组装上述依赖 | 在 SDK 使用和工作线程启动前设置 ClaimsLimits |
+| `worker.rs` | 轮询、申请过期、租约恢复、签发与会话清理 | 直接使用领域规则、SDK 和 Toasty 事务；由 main 启动 |
+| `main.rs / viewmodels/mod.rs` | 启动与共享依赖组装 | main 设置 SDK 限制，Application::bootstrap 导入密钥、连接数据库并初始化配置 |
 
 当前实现不为每张表建立通用 CRUD trait 或通用 JSON 存取函数；由 `viewmodels`、`worker.rs` 和会话/应用适配器直接拥有 Toasty 原生事务；`models` 按业务对象定义类型化 ORM 模型，`store.rs` 仅提供模型注册、数据库句柄与启动迁移。所有关联读写传入同一个 `&mut Transaction`，不能在事务中重新取得全局数据库句柄执行关联操作。
 
 ## 5. PostgreSQL 模型与事务归属
 
-### 5.1 逻辑模型
+### 5.1 当前持久化模型
 
-| 模型 / 建议表名 | 主要内容 | 关键约束 |
+所有模型由 `store::connect_database` 注册，中心和示例应用复用同一模型集与迁移集，在各自独立数据库中运行。
+
+| 模型 / 表名 | 定义文件（相对 `issuer-service/src/models`） | 内容与约束 |
 |---|---|---|
-| `IssuerMetadata / issuer_metadata` | 固定组织公开信息与指纹 | 当前部署唯一 issuer；与导入密钥匹配 |
-| `ServiceSettings / service_settings` | 展示信息、开关、轮询、待审期限、修订 | 单一设置记录，版本条件更新 |
-| `ClaimHintRevision / claim_hint_revisions` | 不可变建议文档和发布时间 | 修订唯一；旧申请可追溯 |
-| `AdminUser / admin_users` | 管理员标识、密码哈希、状态 | 账号唯一；首期统一管理员角色 |
-| `AdminSession / admin_sessions` | 会话摘要、用户、有效期 | 会话摘要唯一，按有效期清理 |
-| `Member / members` | 内部成员标识、核验摘要及资料引用 | 中心内可信 member_ref 唯一 |
-| `Enrollment / enrollments` | SDK 请求、哈希、访问秘密摘要、状态、版本、业务快照 | `(issuer_id, request_id)` 唯一；按状态/创建时间索引 |
-| `ReviewDecision / review_decisions` | 操作者、核验来源、核准集合、公开及内部理由 | 追加历史；申请引用当前有效批准决定 |
-| `MemberIssuanceSlot / member_issuance_slots` | 成员当前获准或已签发的请求 | `(issuer_id, member_ref)` 主键；申请绑定唯一 |
-| `IssuanceJob / issuance_jobs` | 任务、下次尝试时间、执行代次、租约、失败码 | 每申请唯一任务；按可运行时间索引 |
-| `Issuance / issuances` | 已提交的完整盲签响应、批准引用及签发时间 | 每申请唯一响应，issuer/member 唯一 |
-| `OperationDedup / operation_dedup` | 管理写操作幂等键、内容摘要、原结果 | 操作者/动作/幂等键唯一 |
-| `AuditEvent / audit_events` | 设置、审批、签发等业务事件 | 与对应业务写入同事务；按时间和对象索引 |
+| `IssuerMetadata / issuer_metadata` | `settings.rs` | 固定中心 issuer，启动时核对导入密钥 |
+| `Settings / service_settings` | `settings.rs` | 单一配置、修订、开关、提示与更新时间 |
+| `ClaimHintRevision / claim_hint_revisions` | `settings.rs` | 按 revision 保存历史属性提示 |
+| `Enrollment / enrollments` | `enrollment.rs` | request_id 主键；申请、审核、历史、签发代次、租约、响应与失败码聚合 |
+| `Member / members` | `enrollment.rs` | member_ref 主键；关联 Enrollment，保留签发名额和核验记录 |
+| `Idempotency / operation_dedup` | `audit.rs` | 幂等键主键、内容摘要、历史操作结果 |
+| `AuditRecord / audit_events` | `audit.rs` | 操作主体、动作、目标与时间 |
+| `WebSession / web_sessions` | `session.rs` | Salvo 服务端会话，按 namespace 区分用途 |
+| `RevokedSession / revoked_sessions` | `session.rs` | 已撤销会话标识 |
+| `StoredChallenge / login_challenges` | `session.rs` | SDK 挑战原文及消费状态 |
+| `ApplicationSession / application_sessions` | `session.rs` | 主体、issuer、origin、披露属性与有效期 |
 
-申请中的 `member_ref` 在核验前可以为空。成员名额在批准时保留，直到未签发申请被合法终止才可释放；`ISSUED` 的名额长期保留。
+管理员账号与密码哈希来自部署环境；`AdminSession` 是保存在 Salvo 会话中的身份模型，定义于 `models/domain.rs`，没有独立的管理员用户表或管理员会话表。审核决定、成员名额、签发任务与结果通过 `Enrollment` 和 `Member` 字段表达，没有单独的 decision、job、slot 或 issuance 模型。
 
-原始 SDK 消息、规范 Claims 快照及已签发响应优先以经过严格校验的 JSON 文本保存，以便原样领取和重验；当前实现把主键、成员关系、设置修订和开关、租约与时间等定义为类型化列；申请公开状态快照使用 `Json<EnrollmentView>`，列表筛选仍在内存完成。不要从分散的属性行或最新建议配置重建已经获批的请求。
+`ReviewHistory` 是 `enrollment.rs` 中的结构化历史模型。Claims、属性提示、公开状态、审核决定及历史使用明确的 `Json<T>` 映射 JSONB；主键、关联、开关、修订、租约与时间单独建列。幂等存储兼容多种历史操作结果，恢复时由 `viewmodels/idempotency.rs` 反序列化为指定响应类型。
 
-签发列表是业务读模型，以获准签发任务为基准关联成功记录，使等待、失败及已签发都能在同一台账页面展示；不能只读取 `issuances` 成功表而遗漏待处理任务。成员详情、概览和审计同样返回有限读模型，不直接序列化 ORM 关联对象。
+签发列表按申请存在审核决定筛选；列表搜索、排序和分页当前在内存完成。管理端显式转换为 `AdminEnrollmentView`、`MemberView` 和 `AuditEventView`，排除访问摘要、请求原文及签名响应等内部字段。
 
-当前实现使用 11 个独立模型/表：`IssuerMetadata / issuer_metadata`、`Settings / service_settings`、`ClaimHintRevision / claim_hint_revisions`、`Enrollment / enrollments`、`Member / members`、`Idempotency / operation_dedup`、`AuditRecord / audit_events`、`WebSession / web_sessions`、`RevokedSession / revoked_sessions`、`StoredChallenge / login_challenges`、`ApplicationSession / application_sessions`。上表描述的审批、租约和签发结果聚合在 `Enrollment` 的明确字段中，管理员凭据仍从环境变量提供。
-
-Claims、建议、申请公开状态和审批历史等结构化快照使用 Toasty `Json<T>` 映射到 JSONB；主键、成员关系、开关、修订、租约、会话 namespace 等为独立类型化字段。成员的 `enrollment` 声明为原生 `#[belongs_to]` 关系。用例按下列方式直接调用 ORM，不经过自定义 CRUD 函数：
+CRUD 直接使用 Toasty 生成的 API 和原生关联：
 
 ```rust
 let enrollment = Enrollment::get_by_request_id(&mut tx, &request_id).await?;
@@ -344,7 +242,7 @@ member.update().issued(true).exec(&mut tx).await?;
 | 持久化操作 | 同一事务的内容 |
 |---|---|
 | 接受申请 | 检查原请求幂等、固定业务元数据、保存建议快照引用、创建待审记录 |
-| 批准申请 | 核对状态/版本/时间/开关、确认或建立成员记录、保留成员名额、批准记录、签发任务、审计、管理幂等结果 |
+| 批准申请 | 核对状态/版本/时间/开关、创建成员并保留名额、保存审核决定及历史、申请转为 Approved、审计、管理幂等结果 |
 | 退回 / 拒绝 / 取消 / 过期 | 状态条件迁移、对应理由；适用时释放未签发名额并废弃旧执行代次 |
 | 取得签发执行权 | 核对获准状态及签发开关、分配新代次、写入租约、更新执行状态 |
 | 提交签发结果 | 重查代次及开关、保存唯一盲签响应、更新申请及任务状态、占用永久签发名额、写审计 |
@@ -374,7 +272,7 @@ member.update().issued(true).exec(&mut tx).await?;
 
 事务冲突作为预期竞争记录在 `debug`，worker 租约竞争留待下一轮；数据库操作失败、任务失败和本地加密写入失败使用 `error`。HTTP 错误只记录公开状态码、错误码与响应中的 `trace_id`。span 使用 `skip_all`，不捕获密钥、连接串、申请/证明/Claims、Cookie 或钱包数据；默认配置提高应用 target 以及 `salvo_extra::logging` 的日志级别，其余第三方 SQL/HTTP 库保持 `warn`。
 
-注册中心和独立应用通过 `http::service` 构建 Salvo `Service`，在路由层之外挂载框架原生 `logging::Logger`。它以 `info` 记录每次访问的方法、路径、状态码、耗时、协议及远端地址，并将请求 span 传播到业务日志。Service 中间件保证权限/来源/CSRF/限流早期返回及 404/405 都会被记录；不自行实现路径分发或访问日志计时器。默认 `RUST_LOG` 显式包含 `salvo_extra::logging=info`，应用 target 为 `info`。
+注册中心通过 `views::service`（兼容导出 `http::service`）、独立应用通过 `http::service` 构建 Salvo `Service`，在路由层之外挂载框架原生 `logging::Logger`。它以 `info` 记录每次访问的方法、路径、状态码、耗时、协议及远端地址，并将请求 span 传播到业务日志。Service 中间件保证权限/来源/CSRF/限流早期返回及 404/405 都会被记录；不自行实现路径分发或访问日志计时器。默认 `RUST_LOG` 显式包含 `salvo_extra::logging=info`，应用 target 为 `info`。
 
 访问日志仅使用 URI 的 path，不包含 query、Authorization、Cookie 或请求体。`issuer-service/tests/access_logs.rs` 通过实际 Service 请求验证正常响应、早期拒绝、路由缺失、方法不匹配和服务错误，检查每条访问记录的 INFO 等级、字段及请求敏感数据隔离；端到端测试使用与生产相同的 Service 入口。
 
@@ -382,54 +280,35 @@ member.update().issued(true).exec(&mut tx).await?;
 
 ```text
 issuer-service-webui/
-├── package.json
-├── vite.config.ts
+├── package.json  # 依赖、开发和构建命令
+├── vite.config.ts  # 管理 base、环境与 API 代理
 └── src/
-    ├── index.tsx
-    ├── app/
-    │   ├── App.tsx
-    │   ├── router.tsx
-    │   ├── providers.tsx              # QueryClient、会话及全局通知
-    │   ├── AdminLayout.tsx            # 导航、会话信息和页面容器
-    │   ├── RequireAdmin.tsx           # 页面访问门禁
-    │   └── SettingsLayout.tsx         # 设置子页与共享草稿边界
-    ├── pages/
-    │   ├── LoginPage.tsx
-    │   ├── OverviewPage.tsx
-    │   ├── EnrollmentListPage.tsx
-    │   ├── EnrollmentDetailPage.tsx
-    │   ├── MemberListPage.tsx
-    │   ├── MemberDetailPage.tsx
-    │   ├── IssuanceListPage.tsx
-    │   ├── AuditPage.tsx
-    │   ├── NotFoundPage.tsx
-    │   └── settings/
-    │       ├── ServiceSettingsPage.tsx
-    │       ├── ClaimHintsPage.tsx
-    │       └── IssuerInfoPage.tsx
+    ├── index.tsx  # 页面挂载
+    ├── App.tsx  # Router、QueryClient、Layout 与会话门禁
+    ├── api.ts  # HTTP 请求、CSRF、错误及管理展示接口
+    ├── ui.tsx  # 共用 UI、状态与格式化
     ├── features/
-    │   ├── auth/                      # api、会话资源、登录表单
-    │   ├── overview/                  # 概览读模型与统计卡片
-    │   ├── settings/                  # 完整设置草稿、冲突及保存
-    │   ├── claim-hints/               # 建议编辑器、预览、顺序与校验
-    │   ├── enrollments/               # 申请列表、详情及公开/内部理由
-    │   ├── review/                    # 成员核验、批准确认、退回/拒绝
-    │   ├── members/                   # 成员检索与只读详情
-    │   ├── issuances/                 # 台账、失败展示及重试动作
-    │   └── audit/                     # 事件分页、对象链接
-    ├── shared/
-    │   ├── api/
-    │   │   ├── client.ts              # 同源请求、CSRF、401 与取消
-    │   │   ├── errors.ts              # API 错误到可操作提示的映射
-    │   │   └── query-keys.ts
-    │   ├── ui/                        # 表格、对话框、字段、空态、状态条
-    │   └── format/                    # 时间、指纹、标识展示
-    └── styles/
-        ├── tokens.css
-        └── global.css
+    │   ├── useWrite.tsx  # 幂等写操作与重试
+    │   └── EnrollmentRows.tsx  # 申请和签发台账的共用表格
+    ├── pages/
+    │   ├── index.ts  # 页面导出
+    │   ├── Login.tsx  # 登录
+    │   ├── OverviewPage.tsx  # 总览
+    │   ├── EnrollmentList.tsx  # 申请列表和签发台账
+    │   ├── ReviewPage.tsx  # 申请详情与审核
+    │   ├── MembersPage.tsx  # 成员列表
+    │   ├── MemberPage.tsx  # 成员详情
+    │   ├── SettingsPage.tsx  # 服务设置与属性提示编辑
+    │   ├── IssuerPage.tsx  # 签发身份只读信息
+    │   ├── AuditPage.tsx  # 审计列表
+    │   └── NotFound.tsx  # 未知路由
+    ├── design.css  # 设计样式
+    ├── interactive.css  # 交互样式
+    ├── index.css  # 入口样式
+    └── App.css  # 应用样式
 ```
 
-每个 feature 先按需要包含 `api.ts`、`queries.ts`、`model.ts`、`components/`；页面只组合 feature、布局和路由参数。建议新增 `@solidjs/router` 与 `@tanstack/solid-query`，由 Solid signals/store 保存未提交表单，由 Query 保存服务端读模型。
+布局、路由和会话查询集中在 `App.tsx`，页面通过 Solid Query 读取数据，通过 `useWrite` 提交管理写操作；未提交表单使用页面内 signals。当前没有独立的 app、shared 或按领域划分的 feature 子目录。
 
 ## 7. 中心页面、路由与交互
 
@@ -437,19 +316,19 @@ issuer-service-webui/
 
 管理后台统一部署于 `/admin/`。下表的 API 均带 `/api/v1` 前缀。
 
-| 路由 | 页面及 feature | 页面内容、动作 | 主要 API |
+| 路由 | 当前页面组件（`src/pages`） | 页面内容、动作 | 主要 API |
 |---|---|---|---|
-| `/admin/login` | 登录 / auth | 账号密码、登录错误、成功后返回站内目标页；无公开注册 | `POST /admin/sessions` |
-| `/admin/overview` | 概览 / overview | 注册与签发状态、密钥可用性、待审及失败数量、处理入口 | `GET /admin/overview` |
-| `/admin/enrollments` | 申请列表 / enrollments | 状态、时间、请求 ID 筛选，游标分页；待审为默认视图 | `GET /admin/enrollments` |
-| `/admin/enrollments/:requestId` | 审批工作区 / enrollments + review | 固定申请、核验、处理、签发状态和历史 | 申请详情、批准/退回/拒绝/重试 |
-| `/admin/members` | 成员列表 / members | 可信成员检索、名额状态及关联申请入口 | `GET /admin/members` |
-| `/admin/members/:memberRef` | 成员详情 / members | 内部标识、核验摘要、已获准或已签发申请；首期只读 | `GET /admin/members/{member_ref}` |
-| `/admin/issuances` | 签发台账 / issuances | 签发时间、状态、失败原因、重试入口；进入原申请查看详情 | `GET /admin/issuances` |
-| `/admin/settings/service` | 服务设置 / settings | 展示信息、公开地址、开关、期限、轮询间隔 | `GET/PUT /admin/settings` |
-| `/admin/settings/claims` | 默认建议 / settings + claim-hints | 字段编辑、顺序、默认值、预览及修订冲突 | 同一完整设置 API |
-| `/admin/settings/issuer` | 签发身份 / settings | 只读公钥、指纹、协议版本、实际 ClaimsLimits 及密钥状态 | `GET /admin/settings` |
-| `/admin/audit` | 审计 / audit | 操作者、时间、动作、对象过滤及分页 | `GET /admin/audit-events` |
+| `/admin/login` | `Login.tsx` | 账号密码、登录错误、成功后进入概览 | `POST /admin/sessions` |
+| `/admin/overview` | `OverviewPage.tsx` | 注册与签发状态、密钥可用性、待审及失败数量、处理入口 | `GET /admin/overview` |
+| `/admin/enrollments` | `EnrollmentList.tsx` | 状态筛选、请求 ID 或属性值搜索、游标分页；默认全部状态 | `GET /admin/enrollments` |
+| `/admin/enrollments/:requestId` | `ReviewPage.tsx` | 固定申请、核验、处理、签发状态和历史 | 申请详情、批准/退回/拒绝/重试 |
+| `/admin/members` | `MembersPage.tsx` | 可信成员检索、名额状态及关联申请入口 | `GET /admin/members` |
+| `/admin/members/:memberRef` | `MemberPage.tsx` | 内部标识、核验摘要、已获准或已签发申请；首期只读 | `GET /admin/members/{member_ref}` |
+| `/admin/issuances` | `EnrollmentList.tsx` | 签发时间、状态、失败原因、重试入口；进入原申请查看详情 | `GET /admin/issuances` |
+| `/admin/settings/service` | `SettingsPage.tsx` | 展示信息、公开地址、开关、期限、轮询间隔 | `GET/PUT /admin/settings` |
+| `/admin/settings/claims` | `SettingsPage.tsx` | 字段编辑、顺序、默认值、预览及修订冲突 | 同一完整设置 API |
+| `/admin/settings/issuer` | `IssuerPage.tsx` | 只读公钥、指纹、协议版本及实际 ClaimsLimits | `GET /service-info` |
+| `/admin/audit` | `AuditPage.tsx` | 展示操作者、时间、动作与对象，支持刷新及分页 | `GET /admin/audit-events` |
 
 `/admin` 跳转到概览。签发详情复用申请详情中的“签发”区域，不为同一对象维护第二套详情接口。未知页面使用站内 404；API 路径始终返回 API 404，不进入 SPA fallback。
 
@@ -458,24 +337,22 @@ issuer-service-webui/
 申请详情采用一个工作区，分为三个主要区域：
 
 1. **申请事实**：请求 ID、哈希、提交时版本、原始 Claims、建议差异、申请说明及到期时间。原始 Claims 只读。
-2. **身份核验与决定**：选择已有成员或在批准时建立新成员，录入可信资料来源；确认完整核准集合；提供通过、退回或拒绝入口。内部备注与公开理由分别输入。
+2. **身份核验与决定**：录入成员标识、可信资料来源和核验说明，批准时创建成员并保留名额；确认完整核准集合；提供通过、退回或拒绝入口。内部备注与公开理由分别输入。
 3. **处理历史**：状态变化、审批人、签发任务、失败码、已签发时间。仅合法状态显示重试或终止操作。
 
 “通过”确认框再次列出完整 Claims、成员和期望状态修订。前端不允许在这里直接改 Claim 值；有改动需求则退回。提交按钮禁用只能改善交互，服务端仍执行版本、幂等、成员名额及权限检查。
 
-### 7.3 设置页面共享一份草稿
+### 7.3 设置编辑实现
 
-服务信息和 Claims 建议虽然拆成两个编辑页面，仍对应一份 `SettingsDraft`，由 `SettingsLayout` 持有加载时的完整配置及修订。页间切换保留未保存修改；离开设置区域时提示保存或放弃。
+`SettingsPage.tsx` 同时承载 `/settings/service` 和 `/settings/claims`，依据路由选择展示内容。它读取完整 `ServiceSettings`，用组件内 `draft` signal 保存编辑值，保存时完整提交配置与期望修订。属性提示的增删、顺序调整和预览也在同一文件中实现。
 
-保存提交完整配置与同一个期望修订，不因切换标签页遗漏未显示字段。只读 issuer 页面不提供私钥编辑。`409` 时显示服务端与当前草稿差异，由管理员重载或合并后再保存；不自动覆盖新版本。
-
-建议编辑器使用专门的 `ClaimHintEditor`，包含名称、说明、默认值、示例和默认加入开关；它与钱包的“申请 Claim 键值编辑器”分别实现，避免把默认建议误当必填约束。
+`useWrite` 保存幂等键并处理写入结果；`409` 后可重新加载配置。只读公钥与 issuer 信息由 `IssuerPage.tsx` 展示。当前没有 `SettingsLayout`、`SettingsDraft` 或独立的 `ClaimHintEditor` 模块；组件内草稿不应视为独立的跨页持久化状态。
 
 ### 7.4 服务端状态与界面状态
 
-列表筛选、分页游标、详情标签进入 URL；表单草稿、展开状态留在组件。API mutation 成功后使相关详情、列表、概览、成员和台账缓存失效。
+当前列表筛选、搜索、分页游标与表单草稿使用组件内 signals，查询参数随 API 请求发送。申请列表每 10 秒刷新，审核详情每 5 秒刷新；写入成功后由页面重新读取相应查询。
 
-后台会话只依赖 HttpOnly Cookie，前端不保存管理令牌。会话失效时清空受保护查询并转到登录页，返回地址只允许本站管理路由。审批中状态改变时提示刷新，不在后台自动再次提交原操作。
+`App.tsx` 的 Layout 读取管理员会话并控制页面门禁，后台身份依赖 HttpOnly Cookie；`api.ts` 处理 CSRF 和 API 错误，`useWrite` 管理提交中状态、错误与重试幂等键。
 
 管理页面所有 Claims、备注和理由作为文本显示；输入的 HTML 不进入 `innerHTML`。审计及通知仅展示需要的信息，不将完整表单写入浏览器日志。
 
@@ -483,139 +360,76 @@ issuer-service-webui/
 
 ```text
 wallet/src-tauri/
-├── Cargo.toml
-├── tauri.conf.json
+├── Cargo.toml  # wallet / wallet_lib
+├── build.rs  # Tauri 构建入口
+├── tauri.conf.json  # 桌面应用配置
 ├── capabilities/
-│   └── default.json                   # 仅主窗口需要的能力
+│   └── default.json  # 窗口能力
 ├── src/
-│   ├── main.rs
-│   ├── lib.rs                         # Tauri 初始化及 command 注册
-│   ├── bootstrap.rs                   # SDK 限制、系统密钥和本地数据初始化
-│   ├── runtime.rs                     # 解锁状态、后台任务与锁定代次
-│   ├── domain/
-│   │   ├── mod.rs
-│   │   ├── center.rs                  # 中心地址、固定指纹、建议缓存
-│   │   ├── trusted_app.rs             # 独立可信应用 origin 与 issuer
-│   │   ├── enrollment.rs              # 草稿、固定提交及申领状态
-│   │   ├── credential.rs              # 本地凭证索引及展示元信息
-│   │   ├── login.rs                   # 登录任务、挑战和同意计划
-│   │   ├── vault.rs                   # 钱包版本、锁定与记录状态
-│   │   └── error.rs
-│   ├── application/
-│   │   ├── mod.rs
-│   │   ├── ports.rs                   # 本地原子存储、中心客户端与密钥保护
-│   │   ├── vault.rs                   # 初始化、解锁、锁定及恢复
-│   │   ├── centers.rs                 # 中心连接确认、建议读取与地址迁移
-│   │   ├── trusted_apps.rs            # 独立创建及更新可信应用配置
-│   │   ├── enrollments.rs             # 草稿、提交、同步、取消与领证
-│   │   ├── credentials.rs             # 可用凭证查询、详情及本地删除
-│   │   ├── login.rs                   # 挑战检查、领证续接、披露同意与证明
-│   │   └── preferences.rs             # 自动锁定等本地偏好
-│   ├── commands/
-│   │   ├── mod.rs
-│   │   ├── vault.rs
-│   │   ├── centers.rs
-│   │   ├── trusted_apps.rs
-│   │   ├── enrollments.rs
-│   │   ├── credentials.rs
-│   │   ├── login.rs
-│   │   ├── preferences.rs
-│   │   ├── events.rs                  # 只包含有限业务状态的事件
-│   │   └── dto/                       # 可向前端暴露的视图与命令输入
-│   ├── infrastructure/
-│   │   ├── mod.rs
-│   │   ├── storage/
-│   │   │   ├── mod.rs
-│   │   │   ├── vault_file.rs          # 认证加密文件、格式与原子替换
-│   │   │   ├── records.rs             # 持久化记录到领域视图的映射
-│   │   │   ├── migration.rs           # 本地数据格式版本迁移
-│   │   │   └── recovery.rs            # 中断恢复、临时文件及已完成申领清理
-│   │   ├── security/
-│   │   │   ├── mod.rs
-│   │   │   ├── key_protector.rs       # 操作系统密钥保护能力接口
-│   │   │   ├── windows.rs             # Windows DPAPI / 系统凭据适配
-│   │   │   └── encryption.rs          # 本地记录认证加密
-│   │   ├── http/
-│   │   │   ├── mod.rs
-│   │   │   ├── issuer_client.rs       # 固定中心端点、超时、限流和 DTO
-│   │   │   └── errors.rs              # 网络错误映射及重试分类
-│   │   └── sdk/
-│   │       ├── mod.rs
-│   │       ├── enrollment.rs          # begin_enrollment、finish、备份恢复
-│   │       └── presentation.rs        # wire、origin 校验和 present
-│   └── jobs/
-│       ├── mod.rs
-│       └── enrollment_sync.rs         # 每申请单一轮询、退避和后台降频
-├── examples/
-│   └── export_ipc_types.rs            # 导出前端可用的普通 IPC DTO
-└── tests/
-    ├── local_recovery.rs
-    ├── enrollment_flow.rs
-    ├── login_consent.rs
-    └── vault_locking.rs
+│   ├── main.rs  # 桌面可执行入口
+│   ├── lib.rs  # 初始化、wallet_command 注册、同步循环与事件
+│   ├── engine.rs  # Engine、网络请求、业务用例、同步和单元测试
+│   ├── model.rs  # 加密文档及中心、草稿、申请、凭证、应用和任务记录
+│   ├── dto.rs  # 公开 IPC 展示 DTO 与 TS 声明
+│   └── storage.rs  # Vault、DPAPI、AES-GCM、单写入者锁、原子写入及测试
+└── examples/
+    └── export_ipc.rs  # 导出钱包 IPC 展示类型
 ```
 
-钱包 Rust crate 只正常依赖 holder SDK。所有中心请求由 `issuer_client` 发起，前端不安装一份可直接访问中心的 HTTP 客户端；这样申请访问秘密始终留在 Rust 层。
+### 8.1 当前模块职责
 
-### 8.1 关键职责
+`lib.rs` 从环境读取 SDK 和网络限制，构造 `Engine`，只注册一个 Tauri 命令 `wallet_command`。它把命令名和参数交给 `Engine::command`，并启动后台申请同步循环。
 
-| 用例模块 | 输入与输出 | 必须保持的边界 |
-|---|---|---|
-| `centers` | 用户输入地址、可信指纹；返回连接预览及本地中心 ID | 首次探测不等于已信任；确认后才保存固定身份 |
-| `enrollments` | 草稿键值、建议修订、说明；返回本地申请视图 | 创建 pending、访问秘密和固定元数据并持久化后，才提交 |
-| `credentials` | 本地凭证 ID；返回需要显示的 Claims 及状态 | 不返回 holder 备份、用户秘密或原始私密对象 |
-| `trusted_apps` | 用户确认的规范 origin 和可信 issuer | 独立于导入挑战建立；拒绝从挑战自动增加信任 |
-| `login` | 可信应用 ID、原始挑战、选中凭证和披露键 | 只为 Rust 内已保存的有效任务生成证明 |
-| `vault` | 本地初始化、系统密钥访问、锁定操作 | 统一控制所有秘密访问和后台任务生命周期 |
+`engine.rs` 持有 `Mutex<Inner>`、HTTP client 和响应大小限制；`Inner` 保存 Vault、解锁文档、epoch 与最近活动时间。中心探测、信任确认、草稿、申请、领证、受信应用、登录任务和偏好操作均在此文件实现。`Engine::request` 统一执行 HTTP 超时、响应大小、429 重试信息及禁止重定向策略；没有独立的 issuer_client、application 或 jobs 模块。
 
-网络操作不持有本地文件写锁。将变更写入本地存储前重新核对记录版本和钱包解锁代次，防止晚到响应覆盖新状态或在锁定后重新输出敏感数据。
+`model.rs` 定义 `Center`、`Draft`、`LocalEnrollment`、`Credential`、`TrustedApp`、`LoginTask` 和 `Document`。`dto.rs` 定义 `WalletStatus`、`CredentialView`、`LocalEnrollmentView`、`DisclosurePlan`，并导出可公开的中心、草稿、应用和任务类型。带秘密的内部记录不直接导出到前端。
+
+网络和阻塞密码学操作不持有内部状态互斥锁；提交或返回敏感结果时重新检查 epoch 与解锁状态。钱包的正常 SDK 依赖为 holder；测试可以使用 issuer/verifier 验证闭环。
 
 ### 8.2 本地数据布局与提交
 
-首期钱包数据量较小，采用一个带版本的加密钱包文档，包含中心、可信应用、草稿、申领、凭证、登录任务续接上下文及偏好。放在操作系统应用数据目录，由 Rust 层负责读写；不在前端 localStorage 或 PostgreSQL 保存钱包秘密。
+数据目录由 `WALLET_DATA_DIR` 指定，`storage::Vault` 管理以下文件：
 
 ```text
-操作系统应用数据目录/CryptoSSO/wallet/
-├── profile.json                       # 最小格式标识，不包含 Claims 或秘密
-├── vault.enc                          # 已提交的认证加密钱包文档
-└── vault.<随机值>.tmp                  # 提交中的加密临时文件，恢复后清理
+WALLET_DATA_DIR/
+├── writer.lock  # 打开钱包期间持有的单写入者锁
+├── key.dpapi    # 当前 Windows 用户保护的数据密钥
+├── vault.enc    # 已提交的 AES-256-GCM 加密文档
+└── profile.json # 最小格式标识，不保存 Claims 或秘密
 ```
 
-本地提交通过同目录加密临时文件、可靠写入和操作系统支持的原子替换完成；限制一个写入者，并防止重复启动的两个进程同时修改同一个钱包。数据密钥由当前操作系统用户的安全能力保护，具体系统封装位置由 `key_protector` 管理。
+原子提交使用同目录 `tempfile::NamedTempFile`，写入并同步后 persist 到目标路径，不承诺固定的临时文件名称。数据密钥保护由 `storage.rs` 内的 `protect` 函数调用 Windows DPAPI；非 Windows 平台不提供该保护能力。
 
-每个凭证关联原 issuer 和 request ID，避免多次恢复产生重复本地条目。领证先提交包含新 holder 且仍保留 pending/响应的完整文档，提交成功后再以第二次本地提交清理 pending；恢复流程可以识别“已保存凭证，待清理”的状态。
+每个凭证保留关联 request ID。领证响应先保存，`Engine::verify_and_store_response` 完成 SDK 解盲验签和 holder 提交，再清理恢复材料；错误时保留可重试状态。当前文档格式为 v1，未知格式或损坏数据停止读取/写入，没有独立的 storage/migration 模块。
 
-首期不保留包含已清理 pending 的长期旧快照，也不提供明文秘密导出。文件格式迁移先验证旧文件、写新加密文档，再切换已提交版本；未知或损坏版本停止写入并报告可恢复信息。
+### 8.3 锁定与后台同步
 
-### 8.3 锁定与长任务
+自动锁定在 Engine 的状态检查中处理，锁定增加 epoch 并释放已加载文档和数据密钥。晚到的网络或密码学结果必须通过 epoch 检查。
 
-钱包锁定时停止新的同步和秘密操作，清除前端敏感查询及已加载 Claims。正在执行的网络或阻塞密码学任务带解锁代次；即使无法立即停止计算，也需在返回时核对代次，丢弃不再授权的结果，并释放相关秘密对象。
-
-`jobs/enrollment_sync` 是申请状态同步的唯一调度者。页面显示申请不会再独立启动轮询；Rust 事件通知前端刷新读模型。解锁恢复后按持久化记录继续同步和领证。
+`lib.rs` 的后台循环读取 `Engine::pending_sync_ids`，按申请轮询间隔及错误退避调用 `Engine::sync`，并发送有限状态事件。用户显式刷新和凭证保存重试也调用同一同步实现；页面不另建中心状态轮询器。
 
 ## 9. 钱包 IPC 契约与事件
 
 ### 9.1 Command 分组
 
-下列名称用于规划命令边界，最终注册名集中在 `commands/mod.rs` 和前端 `bridge`，不在页面中散写 `invoke` 字符串。
+前端的命令名联合类型集中在 `wallet/src/bridge/index.ts`，经 `invoke("wallet_command", { command, args })` 调用。Rust 由 `wallet/src-tauri/src/lib.rs` 注册单一入口，在 `engine.rs` 的分支中执行下列 32 个业务命令；不是每个名字各注册一个 Tauri command。
 
-| 命令组 | 主要操作 | 返回给前端的数据 |
+| 分组 | 当前命令 | 返回给前端的数据 |
 |---|---|---|
-| 钱包 | `get_wallet_status`、`initialize_wallet`、`unlock_wallet`、`lock_wallet` | 是否初始化/解锁、格式版本和可执行操作 |
-| 中心 | `probe_center`、`confirm_center`、`list_centers`、`get_center`、`refresh_claim_hints` | 公开信息、指纹、缓存修订和连接状态 |
-| 可信应用 | `list_trusted_apps`、`save_trusted_app`、`remove_trusted_app` | 规范 origin、issuer 和本地显示名 |
-| 注册草稿 | `create_enrollment_draft`、`save_enrollment_draft`、`get_enrollment_draft` | 可编辑 Claim 行、来源修订、用户删改记录 |
-| 申请 | `submit_enrollment`、`list_enrollments`、`get_enrollment`、`refresh_enrollment`、`cancel_enrollment` | 不含 Bearer 的本地/中心组合状态及公开理由 |
-| 领证 | `complete_enrollment` | 解盲验签与本地保存结果；不返回 holder |
-| 凭证 | `list_credentials`、`get_credential`、`delete_local_credential` | 有限摘要、解锁后允许查看的 Claim 值 |
-| 登录 | `create_login_task`、`prepare_login`、`confirm_disclosure`、`get_presentation`、`cancel_login_task` | 来源校验、披露计划、进度及本次公开 Presentation |
-| 偏好 | `get_preferences`、`save_preferences` | 自动锁定等本地配置，不包含 SDK 全局限制热更新 |
+| 钱包 | `get_wallet_status`、`initialize_wallet`、`unlock_wallet`、`lock_wallet`、`touch_wallet` | 初始化/锁定状态及 epoch，或操作结果 |
+| 中心 | `probe_center`、`confirm_center`、`list_centers`、`get_center`、`refresh_claim_hints` | 中心信息、固定身份和缓存设置 |
+| 草稿 | `create_enrollment_draft`、`get_enrollment_draft`、`save_enrollment_draft` | 可编辑属性行、提示版本与说明 |
+| 申请与领证 | `submit_enrollment`、`list_enrollments`、`get_enrollment`、`refresh_enrollment`、`retry_credential_save`、`cancel_enrollment` | 不含 Bearer/pending 的本地与中心状态；同步中完成领证 |
+| 凭证 | `list_credentials`、`get_credential`、`delete_credential` | 凭证展示信息与 Claims，不返回 holder |
+| 受信应用 | `list_trusted_apps`、`save_trusted_app`、`remove_trusted_app` | 独立确认的 origin、issuer、显示名和修订 |
+| 登录任务 | `list_login_tasks`、`import_login_challenge`、`get_disclosure_plan`、`create_presentation`、`refuse_disclosure` | 任务、披露计划及本次公开证明 |
+| 偏好 | `get_preferences`、`save_preferences` | 自动锁定秒数 |
 
-命令没有“导出所有秘密”“读任意文件”“任意 URL 带 Bearer 请求”等通用能力。探测中心和确认中心分开，秘密请求只发送到已确认的中心地址；跨 origin 重定向不能转发申请访问秘密。
+中心探测与确认分开，秘密请求只发往已确认的中心；没有任意文件读取、秘密导出或带 Bearer 的通用前端网络接口。IPC 展示类型由 `dto.rs` 生成，命令名联合类型目前由 bridge 显式维护。
 
 ### 9.2 登录同意计划
 
-`prepare_login` 在 Rust 内严格解析挑战，核对独立可信应用、issuer、时效及本地凭证，生成带任务修订的 `DisclosurePlan`。前端显示应用 origin、必需键值、额外可选键以及截止时间。
+`import_login_challenge` 在 Rust 内严格解析并保存挑战，`get_disclosure_plan` 核对独立可信应用、issuer、时效及本地凭证，生成带任务修订的 `DisclosurePlan`。前端显示应用 origin、必需键值、额外可选键以及截止时间。
 
 用户确认时提交任务 ID、期望计划修订和选择键。Rust 再次核对任务、完整挑战、选定凭证、解锁代次及时效，校验必需项均已同意，然后生成证明。不能让前端直接传入任意 holder 字节或把“用户曾经同意过”当作后续新挑战的授权。
 
@@ -623,83 +437,43 @@ wallet/src-tauri/
 
 重启只恢复任务和申请关联，不恢复可自动重放的披露授权；重新核对挑战后再次确认。修改或删除可信应用配置、删除相关凭证，都使依赖旧版本的同意计划失效。
 
-### 9.3 事件
+### 9.3 当前事件
 
-| 事件 | 载荷 | 用途 |
+| 事件 | 载荷 | 发送与订阅 |
 |---|---|---|
-| `wallet://lock-changed` | 锁定状态、解锁代次 | 清空前端敏感资源或恢复加载 |
-| `wallet://enrollment-changed` | 本地申请 ID、记录修订、有限状态 | 刷新申请和首页摘要 |
-| `wallet://credential-changed` | 本地凭证 ID、有限状态 | 更新凭证列表及登录可用性 |
-| `wallet://login-task-changed` | 任务 ID、任务修订及进度 | 更新向导进度 |
+| `wallet://lock-changed` | WalletStatus：initialized、unlocked、epoch、version | Rust `lib.rs` 检测状态改变后发送，前端 `App.tsx` 订阅 |
+| `wallet://enrollment-changed` | `{ id }` | Rust 后台同步后发送，前端 `App.tsx` 订阅 |
 
-事件不携带 Claim 值、访问秘密、原始请求或证明正文。页面经受限查询读取所需详情；监听在布局中统一注册，退出时清理。IPC 错误使用稳定码与用户提示，禁止把内部调试结构原样返回。
+事件不广播 Claims、访问秘密或证明正文。前端收到事件后使 Query 缓存失效；其他显式命令通过 `actions.ts` 刷新查询。当前没有独立的 credential-changed、login-task-changed 事件或 bridge/events.ts。监听的建立和清理由 `App.tsx` 的 Root 组件管理。
 
 ## 10. 钱包 Solid 前端目录
 
 ```text
 wallet/src/
-├── index.tsx
-├── app/
-│   ├── App.tsx
-│   ├── router.tsx                     # HashRouter，适配 Tauri 页面加载
-│   ├── providers.tsx
-│   ├── WalletLayout.tsx               # 中心、凭证、申请、应用导航
-│   ├── RequireUnlocked.tsx
-│   └── WalletEvents.tsx               # 唯一事件监听与缓存失效入口
+├── index.tsx  # 入口挂载
+├── App.tsx  # HashRouter、Root、门禁、QueryClient 和事件监听
+├── actions.ts  # 统一命令执行、错误状态与缓存失效
+├── ui.tsx  # 共用 UI、格式化与提示
 ├── pages/
-│   ├── WelcomePage.tsx
-│   ├── UnlockPage.tsx
-│   ├── HomePage.tsx
-│   ├── CenterListPage.tsx
-│   ├── AddCenterPage.tsx
-│   ├── CenterDetailPage.tsx
-│   ├── EnrollmentDraftPage.tsx
-│   ├── EnrollmentListPage.tsx
-│   ├── EnrollmentDetailPage.tsx
-│   ├── CredentialListPage.tsx
-│   ├── CredentialDetailPage.tsx
-│   ├── TrustedAppListPage.tsx
-│   ├── TrustedAppEditPage.tsx
-│   ├── StartLoginPage.tsx
-│   ├── LoginTaskPage.tsx
-│   ├── PreferencesPage.tsx
-│   └── NotFoundPage.tsx
-├── features/
-│   ├── vault/                         # 初始化、解锁、锁定和恢复提示
-│   ├── centers/                       # 地址探测与信任确认
-│   ├── claim-hints/                   # 建议预览、缓存版本与更新对比
-│   ├── enrollment-draft/              # 可增删 Claim 编辑器、草稿保存
-│   ├── enrollments/                   # 申请进度、处理理由和取消
-│   ├── credentials/                   # 凭证列表、属性查看和本地删除
-│   ├── trusted-apps/                  # 独立可信应用配置
-│   ├── login/                         # 导入挑战、领证续接及披露计划
-│   │   └── components/
-│   │       ├── ChallengeImport.tsx
-│   │       ├── EnrollmentRequired.tsx
-│   │       ├── EnrollmentProgress.tsx
-│   │       ├── RefreshChallenge.tsx
-│   │       ├── DisclosureReview.tsx
-│   │       └── PresentationResult.tsx
-│   └── preferences/
+│   ├── Home.tsx  # Welcome、Unlock、Home、Preferences、NotFound
+│   ├── Centers.tsx  # CenterList、AddCenter、CenterDetail
+│   ├── Enrollments.tsx  # DraftPage、EnrollmentList、EnrollmentDetail
+│   ├── Credentials.tsx  # CredentialList、CredentialDetail
+│   └── Login.tsx  # Apps、AppEditor、StartLogin、LoginTaskPage
 ├── bridge/
-│   ├── index.ts                       # 页面唯一使用的类型化 command 封装
-│   ├── generated.ts                   # Rust IPC DTO 生成结果
-│   ├── events.ts                      # 类型化事件订阅
-│   └── errors.ts
-├── shared/
-│   ├── query-keys.ts
-│   ├── ui/                            # 字段、对话框、状态条及步骤导航
-│   └── format/
-└── styles/
-    ├── tokens.css
-    └── global.css
+│   ├── index.ts  # 命令名联合类型、IPC 调用及错误提示
+│   └── generated.ts  # 生成的公开 IPC 类型
+├── design.css  # 设计样式
+├── interactive.css  # 交互样式
+├── App.css  # 应用样式
+└── vite-env.d.ts  # Vite 环境类型
 ```
 
-钱包前端同样使用 Solid Router 与 Solid Query，Query 的数据源为类型化 IPC。路由使用 HashRouter；表中的路径均指 hash 后的应用内路径。初始欢迎与解锁路由之外，其余路由需解锁。
+页面按业务组集中在五个文件中，没有独立的 app、features、shared 或 styles 子目录。Solid Query 的数据源是 IPC；HashRouter 路径是 hash 后的应用内路径。Root 根据 WalletStatus 处理初始化和解锁门禁，并在锁定时移除敏感查询。
 
 ## 11. 钱包页面与路由
 
-| 路由 | 页面 | 主要内容与操作 | Rust 用例 |
+| 路由 | 页面 | 主要内容与操作 | Engine 命令分组 |
 |---|---|---|---|
 | `/welcome` | 初始化 | 本地钱包说明、系统密钥保护初始化；不创建中心账号 | vault |
 | `/unlock` | 解锁 | 访问系统保护的本地钱包；恢复解锁前的本站路由 | vault |
@@ -722,7 +496,7 @@ wallet/src/
 
 ### 11.1 注册表单
 
-注册页用 `ClaimValueEditor` 管理最终字符串集合，分别记录建议来源、用户编辑和用户明确删除的键。建议更新时展示差异，显式应用；删除的默认项不能因为重新渲染或刷新接口而复活。
+注册编辑直接实现在 `pages/Enrollments.tsx` 的 `DraftPage` 中，以 `Draft.rows` 保存可增删的字符串键值行，以 `claim_hints_revision` 记录建议来源版本。建议更新通过页面对话框显式应用，编辑器没有独立的 ClaimValueEditor 模块。
 
 保留空输入行表示签署空字符串，删除行表示不包含该键。键和值保留用户原始输入，不做 trim 或类型转换；编辑器提供字节数与重复键错误。最终校验仍由 Rust 构造 SDK Claims 执行。
 
@@ -736,69 +510,53 @@ wallet/src/
 
 凭证删除确认说明它只删除本地记录，中心仍保持已签发状态。删除时检查未完成的本地登录任务并使其失效；不会据此释放中心成员名额或改变应用已存在的会话。
 
-### 11.3 登录向导的阶段
+### 11.3 登录向导实现
 
-| 阶段 | 组件 | 可执行动作及离开条件 |
-|---|---|---|
-| 缺少凭证 | `EnrollmentRequired` | 选择匹配中心注册；保留可信应用上下文 |
-| 等待领证 | `EnrollmentProgress` | 查看申请、处理退回、等待签发；应用登录尚未完成 |
-| 等待新挑战 | `RefreshChallenge` | 返回原应用重新获取挑战；不延长旧挑战 |
-| 待授权 | `DisclosureReview` | 显示独立 origin、必需键和值、额外可选项；用户明确确认 |
-| 正在生成 | 进度区域 | 禁止重复提交同一计划；锁定或过期时结果不可继续输出 |
-| 证明可交付 | `PresentationResult` | 复制/导出本次公开证明交回原浏览器；无 Cookie 或完整凭证 |
-| 中止或失效 | 错误/取消区域 | 可重新获取挑战、取消任务或返回凭证列表 |
+受信应用、挑战导入和任务向导共同位于 `pages/Login.tsx`。`StartLogin` 调用 `import_login_challenge` 建立任务；`LoginTaskPage` 通过 `get_disclosure_plan` 读取状态，按结果显示缺少凭证、等待新挑战、披露选择、生成中或证明结果等区域。
 
-这些是同一路由下的阶段组件，由 Rust 任务视图决定当前阶段；URL 直接进入某个步骤不能绕过挑战校验或用户授权。
+这些区域直接在 `LoginTaskPage` 内组合，并没有单独的 EnrollmentRequired、RefreshChallenge、DisclosureReview 或 PresentationResult 文件。生成证明时使用 `create_presentation`，拒绝时使用 `refuse_disclosure`；新挑战仍需从原应用取得并重新核对。
 
 ### 11.4 前端内存和导航
 
 Claims 编辑值与披露值只在解锁期间按需进入前端内存。Query 缓存不持久化到浏览器存储；锁定事件使敏感查询、表单及证明展示立即失效，并阻止旧请求结果重新填充缓存。
 
-离开页面清理事件监听和局部请求；申请轮询由 Rust job 继续管理。未提交草稿需要保存或放弃提示。复制公开证明是显式操作，不自动复制凭证备份、完整秘密或未选择披露的属性。
+全局事件监听由 `App.tsx` 的 Root 建立并在其卸载时清理；申请同步由 Rust `lib.rs` 的后台循环管理。草稿通过页面命令保存至本地。复制公开证明是显式操作，不自动复制凭证备份、完整秘密或未选择披露的属性。
 
 ## 12. 前后端协作的关键调用链
 
-| 业务动作 | 调用链 | 权威提交点 |
+| 动作 | 当前调用链 | 提交点 |
 |---|---|---|
-| 保存中心设置 | Solid 设置草稿 → Salvo handler → settings 用例 → Toasty 事务 | 设置、建议修订、审计和幂等记录一同提交 |
-| 提交钱包申请 | Solid 草稿 → IPC → Rust enrollments → 本地保存 → issuer_client → Salvo enrollment → Toasty | 本地先可恢复，中心再接受完整固定请求 |
-| 批准并签发 | Solid 审批 → Salvo review → 成员/批准/job 事务 → worker → issuer SDK → 结果事务 | 批准与签发是两个可恢复阶段；提交响应后才可领取 |
-| 钱包领证 | Rust job/显式命令 → 查询/领取 → SDK finish → 本地 holder 提交 → pending 清理 | holder 已可靠保存才视为可用 |
-| 生成登录证明 | Solid 导入/授权 → IPC → Rust login → holder present → 公开证明视图 | 固定挑战与同意计划，出示前再次校验 |
-| 创建应用会话 | 原浏览器提交 → 应用 Salvo → verifier → 策略 → 应用 Toasty 事务 | 有效挑战原子消费和会话创建共同提交 |
+| 保存设置 | SettingsPage → useWrite/api → views/admin::settings_save → Application::save_settings | Settings、提示修订、审计、幂等结果同事务提交 |
+| 提交申请 | DraftPage → bridge → wallet_command → Engine → 本地提交 → HTTP → views/public::enrollment_submit → Application::submit | 本地先保存恢复材料，中心再接受固定请求 |
+| 审批签发 | ReviewPage → views/admin::enrollment_approve → Application::review(ReviewAction::Approve) → worker::tick → issuer SDK | 审批与签发结果分别提交，成员名额由 Member 保留 |
+| 钱包领证 | 后台循环/刷新命令 → Engine::sync → 查询与领取 → SDK finish → holder 保存 → 恢复材料清理 | 本地 holder 保存成功才可使用 |
+| 生成证明 | LoginTaskPage → bridge → Engine 的 create_presentation 分支 → holder present | 重新核对任务修订、挑战、选中凭证、时效与 epoch |
+| 应用登录 | 示例 web → relying-party/http.rs → App::verify_and_consume → verifier 与值策略 → Toasty | 消费挑战与创建 ApplicationSession 同事务提交 |
 
-HTTP 与 IPC 各自只承担一次边界转换，页面不直接调用 SDK，ORM 模型也不穿透到界面。取消、重试和错误分类沿用业务文档，不能各页面自行解释一套状态。
+中心的 View 不承载业务事务；Model 经明确的 ViewModel 契约投影后输出。钱包页面只调用 bridge，网络及 SDK 操作留在 Engine。独立应用正常验真不请求中心。
 
 ## 13. 最小接入应用结构
 
 ```text
 examples/relying-party/
-├── Cargo.toml
+├── Cargo.toml  # crypto-sso-relying-party
 ├── src/
-│   ├── main.rs
-│   ├── lib.rs
-│   ├── config.rs                      # 固定 issuer 与实际浏览器 origin
-│   ├── http.rs                        # challenge、proof、会话读写；不提供前端资源
-│   ├── login.rs                       # verifier 调用、属性值策略及事务编排
-│   └── persistence.rs                 # Toasty 挑战与应用会话模型
-├── toasty/
-│   ├── migrations/
-│   ├── snapshots/
-│   └── history.toml
+│   ├── main.rs  # 加载环境、SDK 限制、数据库和 HTTP 服务
+│   ├── lib.rs  # App、固定 verifier/策略、验真与挑战消费事务
+│   └── http.rs  # 挑战、证明、会话、Cookie 与 CSRF
 ├── tests/
-│   └── login_transaction.rs
+│   └── end_to_end.rs  # 中心、钱包、浏览器及独立应用完整验收
 └── web/
-    ├── package.json
-    ├── vite.config.ts
+    ├── package.json  # 示例前端依赖和命令
+    ├── vite.config.ts  # 环境与同源 API 代理
     └── src/
-        ├── App.tsx
-        ├── LoginPage.tsx               # 输出挑战、接收公开证明、同源提交
-        └── SessionPage.tsx             # 展示验真后 subject 和已披露属性
+        ├── index.tsx  # 挑战获取、公开证明提交、会话展示
+        └── style.css  # 登录页样式
 ```
 
-示例固定一个 issuer、一个 origin 和一套简单值策略，使用自己的挑战表与会话表。生产应用可以使用其他后端框架；仓库示例沿用 Salvo/Toasty/PostgreSQL 便于验收。
+示例没有单独的 config、login、persistence 模块或自己的 toasty 目录。`App::from_env` 读取固定 issuer、浏览器 origin 和披露值策略；存储复用 `issuer-service::store::Store`，模型复用中心导出的 `StoredChallenge` 与 `ApplicationSession`，在 `RP_DATABASE_URL` 指定的独立数据库中应用相同迁移。
 
-中心管理会话、申请访问秘密、应用预登录 Cookie 及应用会话使用不同名称和生命周期。示例只依赖 verifier SDK，数据库与中心逻辑隔离，正常验真不调用中心。
+中心管理会话、申请访问秘密、应用浏览器绑定 Cookie 和应用会话使用不同名称与生命周期。示例的正常密码学依赖为 verifier；它也引用 issuer-service 提供配置、错误、会话与持久化工具，因此并非仅依赖 verifier crate。已有凭证的证明验真不调用中心。
 
 ## 14. 开发、部署与配置边界
 
@@ -814,42 +572,33 @@ examples/relying-party/
 
 | 配置类别 | 存放位置 | 是否由管理网页修改 |
 |---|---|---|
-| DB 连接、监听、密钥位置、SDK 启动限制、worker 并发 | 中心部署配置 | 否 |
+| DB 连接、监听、密钥位置、SDK 启动限制、worker 间隔及租约 | 中心部署配置 | 否 |
 | 服务展示、地址、业务开关、建议、轮询和期限 | PostgreSQL 服务设置 | 是，带修订控制 |
 | 钱包中心信任、受信应用、偏好与本地记录 | 加密钱包文档 | 钱包本地页面操作 |
 | 管理 SPA 和钱包静态资源 | 各自构建产物 | 不作为业务数据编辑 |
 
 前后端分离部署；Rust 后端仅提供 API。开发通过 Vite 反向代理，生产由独立前端网关转发 API，保持浏览器同源 Cookie 语义。Tauri 只加载自身界面，能力配置和 CSP 按实际 IPC/静态资源收紧；中心网络请求由 Rust 层执行。
 
-## 15. 模块验收与测试放置
+## 15. 当前验证入口
 
-| 验收范围 | 位置 | 重点 |
+| 范围 | 当前入口 | 验证内容 |
 |---|---|---|
-| 领域规则 | 对应 Rust domain 模块的单元测试 | 状态迁移、完整核准匹配、建议可覆盖、空集合语义 |
-| HTTP 契约 | `identity-api/tests`、中心 HTTP 集成测试 | 重复字段、原始 SDK JSON 保留、错误码、权限与修订 |
-| PostgreSQL 原子性 | 中心 `tests/review_transactions`、`issuance_recovery` | 真实 PostgreSQL 上并发批准、租约代次、名额和回滚 |
-| Solid 复杂交互 | 对应 feature 测试 | 建议更新保留删改、设置跨页草稿、409 处理、明确披露同意 |
-| 钱包恢复 | 钱包 `tests/local_recovery` 等 | pending 先保存、响应重试、holder 保存失败、锁定代次 |
-| 应用会话 | 示例 `tests/login_transaction` | 真实 PostgreSQL 上同一挑战最多一个会话、提交时效复查 |
-| 完整人工/自动集成 | `scripts/check-integration.ps1` 及验收记录 | 管理配置 → 申请 → 审批 → 领证 → 新挑战登录 |
+| API 访问日志 | `issuer-service/tests/access_logs.rs` | 实际 Service 的正常响应、早期拒绝、404/405、失败与敏感信息隔离 |
+| 启动迁移 | `issuer-service/tests/migrations.rs` | 新库、旧记录转换、关联、快照与重复启动 |
+| 数据库原子性 | `issuer-service/tests/transactions.rs` | 提交可见性、自动/显式回滚、保存点、并发写偏差 |
+| 钱包加密存储 | `wallet/src-tauri/src/storage.rs` 内联测试 | Windows DPAPI、加密重开、篡改检测、单写入者 |
+| 钱包恢复 | `wallet/src-tauri/src/engine.rs` 内联测试 | 注册关闭后暂停重试、锁定重开后恢复材料保留 |
+| 完整业务闭环 | `examples/relying-party/tests/end_to_end.rs` | 配置、申请、审批、签发、恢复、中心离线登录、挑战原子消费，以及类型化管理查询、ETag 与取消接口 |
+| 类型生成 | `scripts/check-contracts.ps1` | HTTP 与 IPC 生成结果一致性 |
+| 前端构建与界面 | 各前端 build、`scripts/check-ui.mjs`、`scripts/check-proxy.mjs` | 构建、Playwright 页面与 Vite 代理验证 |
+| 集成检查 | `scripts/check-integration.ps1` | fmt、Clippy、上述 Rust 测试、三个前端构建、类型检查和 UI 检查 |
 
-HTTP、数据库、IPC、SDK 和 UI 的测试各验证自己的边界；Solid 小组件不逐个编写镜像测试。优先覆盖可能造成重复签发、丢失恢复材料、越权披露或错误会话的跨模块行为。
+真实 PostgreSQL 测试使用 `TEST_DATABASE_URL` 指向专用 `_test` 数据库，通过 `--ignored` 显式执行。完整钱包闭环及 DPAPI 测试需要 Windows。当前没有 identity-api/tests、钱包 tests/ 目录或分散的 feature 单元测试文件。
 
-生成类型纳入差异检查：修改 HTTP DTO 需更新 TS 包；修改 IPC DTO/注册名需更新 bridge，并检查事件载荷。编译生成类型不代替运行时不可信 JSON 校验。
+## 16. 结构维护约定
 
-## 16. 分阶段落地与完成标准
+本文按当前源码组织维护，不把尚未创建的模块或事件列为已有实现。新增、移动或删除业务模块时，同步修改对应目录树、模块表、页面映射及调用链；HTTP/IPC 类型变化同时检查生成产物。
 
-| 阶段 | 创建的主要模块 | 可检查的完成结果 |
-|---|---|---|
-| A：基础边界 | 业务契约、Salvo 组装、Toasty 模型、迁移、管理员初始化 | 真实 PostgreSQL 回滚/唯一性验证，API 与 TS 契约可生成 |
-| B：可配置中心 | auth、settings、public、后台布局及三个设置页 | 管理员登录，建议保存后钱包可查询，配置冲突可处理 |
-| C：可恢复钱包申请 | 本地 vault、centers、draft、enrollments、对应 IPC/页面 | 默认与自定义 Claims 提交，重启/断网后恢复同一申请 |
-| D：可操作审批签发 | review、member slot、workers、审批工作区及台账 | 完成核验、批准、唯一签发、失败重试和领取 |
-| E：凭证管理与登录 | credentials、trusted_apps、login 任务及向导 | 解盲验签保存、锁定保护、明确披露、首次领证后续接 |
-| F：闭环验收 | 最小应用、概览/成员/审计完整查询及集成脚本 | 同源 Cookie、挑战事务、中心离线登录及业务文档验收 |
+中心新增能力遵循 Model → ViewModel → View 的职责划分；所有 Model、ViewModel 类型保留中文用途注释，handler 使用明确类型及 `<操作对象>_<动作>` 命名。兼容导出 `application`、`domain` 和 `http` 只用于旧导入路径，新的中心实现放在 `models`、`viewmodels`、`views`。
 
-每阶段同时交付所需前后端页面和状态处理，避免先铺满空目录或只完成不可操作的 API。新增约束、状态和字段须同时更新业务文档、契约及相关页面说明。
-
-## 17. 本次设计产物与边界
-
-本文列出的目录、模块、API 补充、类型生成工具和页面都是后续实现目标。本轮只更新设计文档及文档入口，不创建业务模块、不安装依赖、不运行数据库迁移。
+具体业务规则见 [业务流程文档](identity-center-wallet-business-flow.md)，启动、环境与迁移见 [部署说明](../deploy/README.md)。本次同步只调整文档，不新增业务模块或改变数据库。
