@@ -3,7 +3,6 @@ use super::{app, body, header, parameter};
 use crate::{
     error::{Error, Result},
     security::now,
-    session_store::PgSessionStore,
 };
 use crypto_sso_identity_api::*;
 use salvo::{
@@ -89,13 +88,11 @@ pub async fn verify(req: &mut Request, depot: &mut Depot) -> Result<Json<SetupDr
     let app = app(depot);
     let draft_id = app.setup_verify(input.code).await?;
     if let Some(old) = depot.session().cloned() {
-        PgSessionStore {
-            store: app.store.clone(),
-            namespace: "setup".into(),
-        }
-        .destroy_session(old)
-        .await
-        .map_err(|_| Error::unavailable())?;
+        app.http_sessions
+            .with_namespace("setup")
+            .destroy_session(old)
+            .await
+            .map_err(|_| Error::unavailable())?;
     }
     let session = depot.session_mut().ok_or_else(Error::unavailable)?;
     session.regenerate();

@@ -58,9 +58,11 @@ async fn startup_creates_fresh_schema_and_preserves_data_on_restart() {
     );
     let report = MIGRATIONS.apply(&db).await.unwrap();
     assert_eq!(report.applied(), 0);
-    assert_eq!(report.skipped(), MIGRATIONS.migrations().len());
+    assert_eq!(MIGRATIONS.migrations().len(), 1);
+    assert_eq!(report.skipped(), 1);
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("toasty");
     let history = History::load_or_default(directory.join("history.toml")).unwrap();
+    assert_eq!(history.entries().len(), 1);
     let latest = history.entries().last().unwrap();
     let snapshot = Snapshot::load(directory.join("snapshots").join(&latest.snapshot_name)).unwrap();
     assert!(

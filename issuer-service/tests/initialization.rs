@@ -10,6 +10,7 @@ use issuer_service::{
 };
 use reqwest::Client;
 use salvo::prelude::*;
+use salvo::session::SessionStore;
 use serde_json::{Value, json};
 use std::{
     io::{self, Write},
@@ -266,37 +267,37 @@ async fn empty_database_http_setup_and_normal_login() {
             .status(),
         401
     );
-    let draft = write(&client, &base, "session", &protection)
+    let response = write(&client, &base, "session", &protection)
         .json(&json!({"code":code}))
         .send()
         .await
         .unwrap()
         .error_for_status()
-        .unwrap()
-        .json::<SetupDraft>()
-        .await
         .unwrap();
+    let cookie = response
+        .cookies()
+        .find(|cookie| cookie.name() == "crypto_sso_setup")
+        .unwrap()
+        .value()
+        .to_owned();
+    let draft = response.json::<SetupDraft>().await.unwrap();
     // 将服务端会话设为过期，旧 Cookie 必须失去权限；轮换码后恢复同一份草稿。
-    for mut row in WebSession::filter_by_namespace("setup")
-        .exec(&mut fixture.app.store.database())
+    let sessions = fixture.app.http_sessions.with_namespace("setup");
+    let cookie =
+        salvo::http::cookie::Cookie::parse_encoded(format!("crypto_sso_setup={cookie}")).unwrap();
+    // Salvo's signed cookie prefixes the store cookie with a 44-byte HMAC.
+    let mut session = sessions
+        .load_session(cookie.value()[44..].to_owned())
         .await
         .unwrap()
-    {
-        let mut session = row.data.0.clone();
-        if session.get::<Value>("setup_grant").is_some() {
-            session
-                .insert(
-                    "setup_grant",
-                    json!({"draft_id":draft.draft_id,"started_at":now()-7201,"last_seen":now()}),
-                )
-                .unwrap();
-            row.update()
-                .data(session)
-                .exec(&mut fixture.app.store.database())
-                .await
-                .unwrap();
-        }
-    }
+        .unwrap();
+    session
+        .insert(
+            "setup_grant",
+            json!({"draft_id":draft.draft_id,"started_at":now()-7201,"last_seen":now()}),
+        )
+        .unwrap();
+    sessions.store_session(session).await.unwrap();
     assert_eq!(
         client
             .get(format!("{base}/api/v1/setup/draft"))

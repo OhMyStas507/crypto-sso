@@ -14,6 +14,7 @@ use crate::{
     error::{Error, Result},
     models::*,
     security::*,
+    session_store::RedisSessionStore,
     store::{IsolationLevel, Store},
 };
 use crypto_sso_issuer::Issuer;
@@ -24,6 +25,7 @@ use std::sync::{Arc, RwLock};
 pub struct Application {
     pub config: Arc<Config>,
     pub store: Store,
+    pub http_sessions: RedisSessionStore,
     pub(crate) admin_secrets: Arc<AdminSecrets>,
     issuer: Arc<RwLock<Option<Arc<Issuer>>>>,
 }
@@ -32,10 +34,12 @@ impl Application {
     #[tracing::instrument(skip_all)]
     pub async fn bootstrap(config: Config) -> anyhow::Result<Self> {
         let admin_secrets = Arc::new(AdminSecrets::load(&config.redis_url).await?);
+        let http_sessions = RedisSessionStore::connect(&config.redis_url).await?;
         let store = Store::connect(&config.database_url).await?;
         let app = Self {
             config: Arc::new(config),
             store,
+            http_sessions,
             admin_secrets,
             issuer: Arc::new(RwLock::new(None)),
         };

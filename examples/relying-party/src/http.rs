@@ -4,7 +4,6 @@ use issuer_service::{
     error::{Error, Result},
     models::ApplicationSession,
     security::{digest, now},
-    session_store::PgSessionStore,
 };
 use rand::rngs::OsRng;
 use salvo::{
@@ -20,20 +19,14 @@ pub fn service(app: App, secret: &[u8], csrf_key: [u8; 32], secure: bool) -> Ser
 }
 
 pub fn router(app: App, secret: &[u8], csrf_key: [u8; 32], secure: bool) -> Router {
-    let sessions = SessionHandler::builder(
-        PgSessionStore {
-            store: app.store.clone(),
-            namespace: "rp/session".into(),
-        },
-        secret,
-    )
-    .cookie_name("crypto_sso_rp")
-    .cookie_path("/api/v1/login")
-    .same_site_policy(SameSite::Strict)
-    .secure_cookie(secure)
-    .session_ttl(Some(std::time::Duration::from_secs(app.session_ttl)))
-    .build()
-    .expect("validated RP session key");
+    let sessions = SessionHandler::builder(app.http_sessions.with_namespace("rp/session"), secret)
+        .cookie_name("crypto_sso_rp")
+        .cookie_path("/api/v1/login")
+        .same_site_policy(SameSite::Strict)
+        .secure_cookie(secure)
+        .session_ttl(Some(std::time::Duration::from_secs(app.session_ttl)))
+        .build()
+        .expect("validated RP session key");
     let login = Router::with_path("api/v1/login")
         .hoop(sessions)
         .hoop(check_origin)

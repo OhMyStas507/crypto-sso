@@ -1,8 +1,8 @@
 //! Durable signing leases fence out stale workers. No response is exposed until its commit.
 use crate::{
     error::{Error, Result},
+    models::Settings,
     models::domain::*,
-    models::{Settings, WebSession},
     security::now,
     store::IsolationLevel,
     viewmodels::Application,
@@ -50,11 +50,6 @@ async fn lease(app: &Application) -> Result<Option<Enrollment>> {
             .await?;
         if claimed {
             candidate = Some(e);
-        }
-    }
-    for session in WebSession::all().exec(&mut tx).await? {
-        if session.data.is_expired() {
-            session.delete().exec(&mut tx).await?;
         }
     }
     // No signing may start before the lease has actually committed.

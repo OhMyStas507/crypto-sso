@@ -16,7 +16,7 @@ sha2.workspace = true
 hex.workspace = true
 zeroize.workspace = true
 tokio = { version = "1", features = ["full"] }
-redis = { version = "0.32", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.32", default-features = false, features = ["tokio-comp", "connection-manager"] }
 salvo = { version = "1", default-features = false, features = ["server", "server-handle", "http1", "cookie", "test", "affix-state", "session", "csrf", "logging"] }
 salvo-csrf = { version = "1", default-features = false, features = ["session-store", "hmac-cipher"] }
 saysion = "0.2"

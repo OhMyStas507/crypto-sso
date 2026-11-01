@@ -14,8 +14,6 @@ pub async fn connect_database(url: &str) -> toasty::Result<toasty::Db> {
             Member,
             Idempotency,
             AuditRecord,
-            WebSession,
-            RevokedSession,
             StoredChallenge,
             ApplicationSession,
             Initialization,

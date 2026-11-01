@@ -7,6 +7,7 @@ use issuer_service::{
     error::{Error, Result},
     models::ApplicationSession,
     security::{digest, now, token},
+    session_store::RedisSessionStore,
     store::{IsolationLevel, Store},
 };
 use serde_json::{Value, json};
@@ -16,6 +17,7 @@ use std::{collections::BTreeMap, sync::Arc};
 pub struct App {
     pub verifier: Arc<Verifier>,
     pub store: Store,
+    pub http_sessions: RedisSessionStore,
     pub required: ClaimKeys,
     pub policy: BTreeMap<String, String>,
     pub session_ttl: u64,
@@ -34,6 +36,7 @@ impl App {
         Ok(Self {
             verifier: Arc::new(Verifier::new(public, origin)?),
             store: Store::connect(&required("RP_DATABASE_URL")?).await?,
+            http_sessions: RedisSessionStore::connect(&required("REDIS_URL")?).await?,
             required: ClaimKeys::new(required_keys)?,
             policy: serde_json::from_str(&required("RP_CLAIM_POLICY_JSON")?)?,
             session_ttl: number("RP_SESSION_TTL_SECONDS")?,

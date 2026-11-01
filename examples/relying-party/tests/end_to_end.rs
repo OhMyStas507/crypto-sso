@@ -99,8 +99,6 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
         database_url: database.clone(),
         redis_url: std::env::var("TEST_REDIS_URL").expect("需要 TEST_REDIS_URL"),
         admin_allowed_origins: vec![base.clone()],
-        setup_dir: temporary.path().join("setup"),
-        setup_storage_key: [21; 32],
         session_ttl: 3600,
         secure_cookie: false,
         worker_interval_ms: 10,
@@ -109,11 +107,8 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
     };
     // 注册验收同样从真实空库初始化开始，不预置管理员或导入签发私钥。
     let app = Application::bootstrap(config.clone()).await.unwrap();
-    let code_path = app.ensure_setup_code(false, false).await.unwrap();
-    let draft_id = app
-        .setup_verify(std::fs::read_to_string(code_path).unwrap())
-        .await
-        .unwrap();
+    let code = app.ensure_setup_code(true, false).await.unwrap().unwrap();
+    let draft_id = app.setup_verify(code.to_string()).await.unwrap();
     let draft = app.setup_draft(&draft_id).await.unwrap();
     let draft = app
         .setup_admin(
@@ -857,6 +852,7 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
     let relying = RelyingParty {
         verifier: verifier.clone(),
         store: store.clone(),
+        http_sessions: app.http_sessions.clone(),
         required: ClaimKeys::new(["role"]).unwrap(),
         policy: BTreeMap::from([("role".into(), "member".into())]),
         session_ttl: 3600,

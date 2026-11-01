@@ -2,7 +2,6 @@ use super::{app, body, header, parameter};
 use crate::{
     error::{Error, Result},
     models::domain::AdminSession,
-    session_store::PgSessionStore,
     viewmodels::contracts::*,
 };
 use crypto_sso_identity_api::{EnrollmentView, Page, ReviewDecision, ServiceSettings};
@@ -31,13 +30,11 @@ pub async fn admin_session_create(
         .await?;
     // 撤销旧服务端会话后，由 Salvo 轮换并签署新 Cookie。
     if let Some(old) = depot.session().cloned() {
-        PgSessionStore {
-            store: app.store.clone(),
-            namespace: "session".into(),
-        }
-        .destroy_session(old)
-        .await
-        .map_err(|_| Error::unavailable())?;
+        app.http_sessions
+            .with_namespace("session")
+            .destroy_session(old)
+            .await
+            .map_err(|_| Error::unavailable())?;
     }
     let session = depot.session_mut().ok_or_else(Error::unavailable)?;
     session.regenerate();

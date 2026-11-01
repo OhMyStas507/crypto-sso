@@ -26,11 +26,15 @@ bun install --cwd scripts
 
 后端首次启动在 Redis 中以原始字节保存 `issuer_service:admin_session_secret`（64 字节）和 `issuer_service:admin_csrf_key`（32 字节），不设置过期时间；后续启动复用已有值。原子 `SET NX` 保证并发启动的实例使用相同密钥。Redis 无法连接或已有密钥格式错误时启动失败，不会降级为进程内随机密钥或覆盖损坏值。生产需为 Redis 配置持久化并保证所有中心实例使用同一个 Redis 逻辑库；清空这些键后重新启动会生成新密钥，原管理及初始化 Cookie、CSRF 令牌随之失效。
 
+Salvo HTTP Session 数据也保存在同一 Redis 中，键为 `issuer_service:http_sessions:<namespace 的十六进制编码>:<session ID>`。管理员、初始化和 RP 示例分别使用 `session`、`setup`、`rp/session` 命名空间；Redis 的绝对过期时间与 Salvo Session 一致，分别由 `ADMIN_SESSION_TTL_SECONDS`、初始化的 7200 秒和 `RP_SESSION_TTL_SECONDS` 控制。新会话用 `SET NX` 创建，已有会话用 `SET XX` 更新，注销或轮换删除旧键后，并发请求不能将其重新创建；无需永久保存撤销标识。连接复用并支持断线重连。Redis Session 丢失后需重新登录或验证初始化权限。PostgreSQL 保留协议挑战与 `ApplicationSession`，不再承担 HTTP Session 存储；唯一的初始迁移基线直接创建最新表结构，不包含 HTTP 会话表。
+
 `dev-compose.mjs` 为 Docker Compose 显式设置 `COMPOSE_DISABLE_ENV_FILE=true`，可透传 `up`、`ps`、`logs`、`down` 等命令，既不加载 `.env`，也不依赖其中的值。也可在终端先设置此开关，再直接运行 `docker compose -f deploy/compose.dev.yaml ...`。
 
 PostgreSQL 和 Redis 的数据目录使用 `tmpfs`，Redis 同时关闭 RDB 和 AOF 持久化。停止或删除容器都会清空数据；每次重新启动 PostgreSQL 后，需再次运行 `node scripts/init-dev-db.mjs` 创建示例和测试数据库。
 
 运行初始化和 RP 端到端测试时，还需配置 `TEST_REDIS_URL`（开发默认为 `redis://127.0.0.1:6379/1`）。Redis 密钥并发测试可用 `cargo test -p issuer-service --lib admin_secrets -- --ignored` 运行，仅操作随机生成的 `issuer_service:test:` 前缀键，结束时删除测试键。
+
+Redis Session 验收使用 `cargo test -p issuer-service --lib session_store -- --ignored`，覆盖多连接共享、TTL、命名空间隔离、注销/轮换并发写入和过期数据校验；测试只操作随机命名空间并清理自身键。
 
 `init-dev-db.mjs` 仅运行 Compose 中声明的 `postgres-init` 服务，不读取应用配置。该服务幂等创建 `crypto_sso_demo` 和 `crypto_sso_test`，不清除已有数据；使用独立 `init` profile 避免普通 `up --wait` 把初始化任务当作长期运行服务。修改开发数据库设置时，更新 Compose 并同步应用 `.env` 中的连接字符串。`TEST_DATABASE_URL` 必须指向独立的、名称以 `_test` 结尾的数据库；集成测试会清空这个数据库内的业务记录。
 
@@ -109,15 +113,15 @@ Get-ChildItem -LiteralPath issuer-service/toasty/migrations, issuer-service/toas
 
 初始迁移 `0000_identity_center.sql` 由 Toasty 官方 CLI 根据当前模型生成，直接创建全部业务与初始化表。项目处于早期开发阶段，迁移基线不包含旧原型表、旧记录搬迁或兼容逻辑；开发环境使用全新数据库。后续模型变化同样重新生成这一份基线，不保留历史增量迁移或旧快照；已有开发数据库使用新建空库重新初始化。
 
-业务数据使用独立的 Toasty 类型化模型和表：`IssuerMetadata`、`Settings`、`ClaimHintRevision`、`Enrollment`、`Member`、`Idempotency`、`AuditRecord`、`WebSession`、`RevokedSession`、`StoredChallenge` 和 `ApplicationSession`。CRUD 直接采用框架生成的 API：`toasty::create!(Model { ... }).exec(&mut tx)` 创建，`Model::get_by_*(&mut tx, &key)` 读取，`model.update().field(value).exec(&mut tx)` 或生成的查询更新器更新，`model.delete()` 或查询删除器删除。需要可选结果时使用 `.filter_by_*().first().exec(...)`；框架会话保存确需 upsert 时使用原生 `upsert_by_id`。没有通用 JSON 记录表的 `get/put/list/remove` 封装或手写 CRUD SQL。
+业务数据使用独立的 Toasty 类型化模型和表：`IssuerMetadata`、`Settings`、`ClaimHintRevision`、`Enrollment`、`Member`、`Idempotency`、`AuditRecord`、`StoredChallenge` 和 `ApplicationSession`。CRUD 直接采用框架生成的 API：`toasty::create!(Model { ... }).exec(&mut tx)` 创建，`Model::get_by_*(&mut tx, &key)` 读取，`model.update().field(value).exec(&mut tx)` 或生成的查询更新器更新，`model.delete()` 或查询删除器删除。需要可选结果时使用 `.filter_by_*().first().exec(...)`。HTTP Session 由 RedisSessionStore 对接 Redis。没有通用 JSON 记录表的 `get/put/list/remove` 封装或手写 CRUD SQL。
 
 成员通过 `#[belongs_to]` 关联申请，详情使用 `member.enrollment().exec(&mut tx)` 加载。Claims、建议、申请公开状态及审批快照使用 Toasty 自带的 `Json<T>` JSONB 字段，编解码由 ORM 完成；密码学请求和响应保留原始严格解析后的文本。HTTP 视图仍显式选取公开字段，数据库模型不会整体返回管理前端。
 
 按 [Toasty 0.11 Transactions](https://tokio-rs.github.io/toasty/0.11.0/guide/transactions.html)，用例通过 `Db::transaction_builder().isolation(IsolationLevel::Serializable).begin()` 开启写事务，关联 CRUD 均使用同一个事务 Executor，成功后调用 `commit()`。错误经 `?` 返回时由 Toasty 自动回滚。
 
-`Serializable` 隔离保护状态/修订检查、成员名额、幂等记录、签发租约与结果，以及挑战消费和应用会话的原子性。PostgreSQL 拒绝并发序列化冲突时，业务接口返回 `409 REVISION_CONFLICT`；刷新后可用原幂等键重试整个用例，不单独重试某条语句。worker 领取租约遇到此冲突时跳过本轮，由下一次 tick 重试；结果提交失败后仍按持久化租约恢复。结果事务通过 Toasty ORM 写入已检查的同一设置行，防止旧快照中的“允许签发”在关闭操作已提交后继续提交结果。Salvo 会话适配器也用原生事务原子保存撤销标记和会话删除，阻止迟到请求恢复已撤销会话；框架接收并处理适配器错误。
+`Serializable` 隔离保护状态/修订检查、成员名额、幂等记录、签发租约与结果，以及挑战消费和应用会话的原子性。PostgreSQL 拒绝并发序列化冲突时，业务接口返回 `409 REVISION_CONFLICT`；刷新后可用原幂等键重试整个用例，不单独重试某条语句。worker 领取租约遇到此冲突时跳过本轮，由下一次 tick 重试；结果提交失败后仍按持久化租约恢复。结果事务通过 Toasty ORM 写入已检查的同一设置行，防止旧快照中的“允许签发”在关闭操作已提交后继续提交结果。Salvo HTTP 会话由 Redis 原子条件写入和删除保护，阻止迟到请求恢复已注销会话；框架接收并处理适配器错误。
 
-管理列表使用 Toasty 原生只读 `RepeatableRead` 事务，保证一次响应中的多次查询使用同一快照。单条独立读取或写入直接调用 Toasty Executor。查询直接访问相应模型，详情按主键或模型关联加载，会话按 namespace 索引查询。列表排序、业务搜索和分页当前仍在内存完成；扩大数据量前应增加检索列、索引及数据库分页。密码学运算使用阻塞工作线程；最终初始化在事务快照内读取密钥并校验身份。
+管理列表使用 Toasty 原生只读 `RepeatableRead` 事务，保证一次响应中的多次查询使用同一快照。单条独立读取或写入直接调用 Toasty Executor。查询直接访问相应模型，详情按主键或模型关联加载；HTTP 会话通过独立命名空间的 Redis 键访问。列表排序、业务搜索和分页当前仍在内存完成；扩大数据量前应增加检索列、索引及数据库分页。密码学运算使用阻塞工作线程；最终初始化在事务快照内读取密钥并校验身份。
 
 所有运行时 CRUD 直接访问当前类型化模型。没有旧 JSON 记录表、迁移归档表或旧导入路径适配层。
 

@@ -2,7 +2,7 @@
 
 文档状态：当前代码结构说明，按 2026-11-01 的仓库实现核对。目录树只列已存在的主要源码、配置和验证入口，省略依赖、构建缓存及部分图片资源。
 
-更新日期：2026-11-01。业务基线：[身份验证中心与钱包业务流程](identity-center-wallet-business-flow.md)。技术栈固定为 PostgreSQL、Salvo、Toasty、Solid 和 Tauri；密码学部分沿用现有 SDK v0.1 / 协议 v1。
+更新日期：2026-11-01。业务基线：[身份验证中心与钱包业务流程](identity-center-wallet-business-flow.md)。技术栈固定为 PostgreSQL、Redis、Salvo、Toasty、Solid 和 Tauri；密码学部分沿用现有 SDK v0.1 / 协议 v1。
 
 ## 1. 总体组织方式
 
@@ -10,7 +10,7 @@
 
 | 单元 | 入口与职责 | 主要依赖 |
 |---|---|---|
-| `issuer-service` | `src/main.rs` 启动 Salvo API 与签发 worker；`models / viewmodels / views` 划分业务 | issuer SDK、identity-api、telemetry、Toasty、PostgreSQL |
+| `issuer-service` | `src/main.rs` 启动 Salvo API 与签发 worker；`models / viewmodels / views` 划分业务 | issuer SDK、identity-api、telemetry、Toasty、PostgreSQL、Redis |
 | `issuer-service-webui` | `src/App.tsx` 组装管理路由、布局、会话与 QueryClient | Solid Router、Solid Query、生成的 HTTP 类型 |
 | `wallet/src-tauri` | `src/lib.rs` 注册 IPC、启动同步；`engine.rs` 执行钱包用例 | holder SDK、identity-api、telemetry、Tauri、reqwest、DPAPI |
 | `wallet/src` | `App.tsx` 组装 HashRouter、锁定门禁与事件订阅 | Solid Router、Solid Query、类型化 IPC bridge |
@@ -23,6 +23,8 @@
 flowchart TD
     AdminUI[Solid 管理后台] -->|HTTP| Views[issuer-service/views]
     Views --> VM[issuer-service/viewmodels]
+    Views --> Sessions[RedisSessionStore]
+    Sessions --> Redis[(Redis: HTTP Session / 密钥)]
     VM --> Models[issuer-service/models]
     VM --> SDK[issuer SDK]
     VM --> Store[store: 注册 / 连接 / 迁移]
@@ -143,7 +145,7 @@ issuer-service/src/
 │   ├── initialization.rs             # 中心初始化、正式管理员、候选密钥与回执
 │   ├── enrollment.rs                 # 申请聚合、审核历史、成员
 │   ├── audit.rs                      # 审计事件、幂等结果存储
-│   ├── session.rs                    # 浏览器会话、撤销、挑战、应用会话
+│   ├── session.rs                    # 协议挑战、应用会话
 │   └── domain.rs                     # 管理员会话、校验、状态迁移、审计规则
 ├── viewmodels/                       # ViewModel
 │   ├── mod.rs                        # Application 共享依赖和初始化
@@ -162,7 +164,7 @@ issuer-service/src/
 │   ├── setup.rs                      # 独立初始化会话、CSRF 与回执 Cookie
 │   └── middleware.rs                 # 来源、会话与安全响应头
 ├── store.rs                          # 模型注册、数据库连接与启动迁移
-├── session_store.rs                  # Salvo PostgreSQL 会话存储适配
+├── session_store.rs                  # Salvo Redis HTTP 会话存储适配
 ├── worker.rs                         # 持久化签发租约和后台调度
 ├── config.rs                         # 部署配置
 ├── security.rs                       # 令牌、摘要和时间工具
@@ -210,8 +212,6 @@ HTTP handler 统一使用 `<操作对象>_<动作>` 命名，例如 `enrollment_
 | `Member / members` | `enrollment.rs` | member_ref 主键；关联 Enrollment，保留签发名额和核验记录 |
 | `Idempotency / operation_dedup` | `audit.rs` | 幂等键主键、内容摘要、历史操作结果 |
 | `AuditRecord / audit_events` | `audit.rs` | 操作主体、动作、目标与时间 |
-| `WebSession / web_sessions` | `session.rs` | Salvo 服务端会话，按 namespace 区分用途 |
-| `RevokedSession / revoked_sessions` | `session.rs` | 已撤销会话标识 |
 | `StoredChallenge / login_challenges` | `session.rs` | SDK 挑战原文及消费状态 |
 | `ApplicationSession / application_sessions` | `session.rs` | 主体、issuer、origin、披露属性与有效期 |
 
@@ -256,7 +256,7 @@ member.update().issued(true).exec(&mut tx).await?;
 
 管理复合查询使用原生只读 RepeatableRead 事务；单条独立查询及写入直接使用 Db Executor。CRUD 直接使用各模型的 `create!`、`get_by_*`、查询构造器、实例/查询更新器和删除器。详情按主键或关联读取，会话按 namespace 索引筛选；列表排序、业务搜索和分页当前仍在内存完成。
 
-昂贵的 `issue_blind` 和应用证明验真均在数据库事务外执行。租约必须先提交才能签名；结果提交时重新核对执行代次、状态、租约和签发开关，旧任务即使算出签名也不能写回。签发结果事务还使用 `current_settings.update().issuance_enabled(enabled).exec(&mut tx)` 更新已检查的同一设置行；若关闭签发已提交，旧快照的写入会触发序列化失败，确保结果无法在关闭后继续提交。该行只参与设置保存和签发结果提交，不再作为全库事务锁。应用端在验真后开启新的原生写事务，重新检查完整挑战、到期时间和消费状态，然后原子消费挑战并创建应用会话。Salvo SessionStore 也以原生写事务保护撤销检查、会话保存与删除。
+昂贵的 `issue_blind` 和应用证明验真均在数据库事务外执行。租约必须先提交才能签名；结果提交时重新核对执行代次、状态、租约和签发开关，旧任务即使算出签名也不能写回。签发结果事务还使用 `current_settings.update().issuance_enabled(enabled).exec(&mut tx)` 更新已检查的同一设置行；若关闭签发已提交，旧快照的写入会触发序列化失败，确保结果无法在关闭后继续提交。该行只参与设置保存和签发结果提交，不再作为全库事务锁。应用端在验真后开启新的原生写事务，重新检查完整挑战、到期时间和消费状态，然后原子消费挑战并创建应用会话。Salvo HTTP Session 存储在 Redis，以 NX 创建、XX 更新和 DEL 删除保护注销及轮换；TTL 自动清理过期会话，PostgreSQL 不再保存 HTTP Session 或撤销标识。
 
 ### 5.3 Toasty 与迁移
 

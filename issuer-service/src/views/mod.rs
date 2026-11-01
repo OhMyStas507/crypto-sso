@@ -6,7 +6,6 @@ mod setup;
 
 use crate::{
     error::{Error, Result},
-    session_store::PgSessionStore,
     viewmodels::{Application, contracts::HealthResponse},
 };
 use salvo::{http::cookie::SameSite, prelude::*, session::SessionHandler};
@@ -25,10 +24,7 @@ pub fn service(app: Application) -> Service {
 
 pub fn router(app: Application) -> Router {
     let sessions = SessionHandler::builder(
-        PgSessionStore {
-            store: app.store.clone(),
-            namespace: "session".into(),
-        },
+        app.http_sessions.with_namespace("session"),
         &app.admin_secrets.session_secret,
     )
     .cookie_name("crypto_sso_admin")
@@ -43,10 +39,7 @@ pub fn router(app: Application) -> Router {
         HeaderFinder::new("x-csrf-token"),
     );
     let setup_sessions = SessionHandler::builder(
-        PgSessionStore {
-            store: app.store.clone(),
-            namespace: "setup".into(),
-        },
+        app.http_sessions.with_namespace("setup"),
         &app.admin_secrets.session_secret,
     )
     .cookie_name("crypto_sso_setup")
