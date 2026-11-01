@@ -9,7 +9,7 @@ use crypto_sso_identity_api::*;
 use serde::{Deserialize, Serialize};
 
 /// 管理员会话模型，保存登录身份、CSRF 令牌和绝对过期时间。
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct AdminSession {
     pub username: String,
     pub csrf_token: String,

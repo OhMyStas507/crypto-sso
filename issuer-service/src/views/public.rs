@@ -5,11 +5,21 @@ use crate::{
 };
 use crypto_sso_identity_api::{EnrollmentView, ServiceInfo, SubmitEnrollment};
 use salvo::{http::StatusCode, prelude::*};
+use salvo_oapi::endpoint;
 
 /// 属性提示 HTTP 响应，明确区分带数据的响应和无响应体的缓存命中。
 pub enum ClaimHintsReply {
     Modified(ClaimHintsResponse),
     NotModified,
+}
+
+impl salvo_oapi::EndpointOutRegister for ClaimHintsReply {
+    fn register(components: &mut salvo_oapi::Components, operation: &mut salvo_oapi::Operation) {
+        Json::<ClaimHintsResponse>::register(components, operation);
+        operation
+            .responses
+            .insert("304", salvo_oapi::Response::new("Not Modified"));
+    }
 }
 
 impl Scribe for ClaimHintsReply {
@@ -23,12 +33,17 @@ impl Scribe for ClaimHintsReply {
     }
 }
 
-#[handler]
+#[endpoint(tags("公开接口"), summary = "读取中心身份、公钥和服务设置")]
 pub async fn service_info_get(depot: &Depot) -> Result<Json<ServiceInfo>> {
     Ok(Json(app(depot).info().await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("公开接口"),
+    summary = "读取属性建议，支持 ETag 缓存",
+    parameters(("if-none-match" = Option<String>, Header, description = "上次响应的 ETag")),
+    responses((status_code = 200, body = ClaimHintsResponse, headers(("etag" = String, description = "建议版本标识"))), (status_code = 304, description = "建议未修改，无响应体", headers(("etag" = String))))
+)]
 pub async fn claim_hints_get(
     req: &Request,
     depot: &Depot,
@@ -55,7 +70,13 @@ pub async fn claim_hints_get(
     }))
 }
 
-#[handler]
+#[endpoint(
+    tags("公开接口"),
+    summary = "提交申请；相同申请可幂等重试",
+    request_body = SubmitEnrollment,
+    security(["enrollment_access" = []]),
+    responses((status_code = 202, description = "新申请已受理", body = EnrollmentView), (status_code = 200, description = "返回已有申请", body = EnrollmentView))
+)]
 pub async fn enrollment_submit(
     req: &mut Request,
     depot: &Depot,
@@ -73,7 +94,12 @@ pub async fn enrollment_submit(
     Ok(Json(view))
 }
 
-#[handler]
+#[endpoint(
+    tags("公开接口"),
+    summary = "查询申请状态",
+    parameters(("request_id" = String, Path, description = "申请 ID")),
+    security(["enrollment_access" = []])
+)]
 pub async fn enrollment_status_get(req: &Request, depot: &Depot) -> Result<Json<EnrollmentView>> {
     Ok(Json(
         app(depot)
@@ -82,7 +108,12 @@ pub async fn enrollment_status_get(req: &Request, depot: &Depot) -> Result<Json<
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("公开接口"),
+    summary = "领取已签发的盲凭证",
+    parameters(("request_id" = String, Path, description = "申请 ID")),
+    security(["enrollment_access" = []])
+)]
 pub async fn credential_get(req: &Request, depot: &Depot) -> Result<Json<CredentialResponse>> {
     Ok(Json(
         app(depot)
@@ -91,7 +122,13 @@ pub async fn credential_get(req: &Request, depot: &Depot) -> Result<Json<Credent
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("公开接口"),
+    summary = "取消申请",
+    request_body = CancelEnrollmentRequest,
+    parameters(("request_id" = String, Path, description = "申请 ID")),
+    security(["enrollment_access" = []])
+)]
 pub async fn enrollment_cancel(req: &mut Request, depot: &Depot) -> Result<Json<EnrollmentView>> {
     let app = app(depot);
     let id = parameter(req, "request_id")?;

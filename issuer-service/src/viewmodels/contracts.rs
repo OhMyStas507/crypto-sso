@@ -6,13 +6,13 @@ use crypto_sso_identity_api::{
 use serde::{Deserialize, Serialize};
 
 /// 健康检查响应 ViewModel，表示服务进程可响应请求。
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct HealthResponse {
     pub status: String,
 }
 
 /// 登录请求 ViewModel，仅接收管理员账号与密码。
-#[derive(Deserialize)]
+#[derive(Deserialize, salvo_oapi::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LoginRequest {
     pub username: String,
@@ -20,26 +20,26 @@ pub struct LoginRequest {
 }
 
 /// CSRF 响应 ViewModel，向浏览器提供当前会话的请求校验令牌。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct CsrfTokenResponse {
     pub csrf_token: Option<String>,
 }
 
 /// 注销响应 ViewModel，确认当前管理员会话已销毁。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct LogoutResponse {
     pub logged_out: bool,
 }
 
 /// 取消申请请求 ViewModel，用期望版本防止覆盖并发审核结果。
-#[derive(Deserialize)]
+#[derive(Deserialize, salvo_oapi::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CancelEnrollmentRequest {
     pub expected_revision: u32,
 }
 
 /// 属性提示响应 ViewModel，提供建议属性、提示版本与有效属性限制。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct ClaimHintsResponse {
     pub api_version: String,
     pub issuer_id: String,
@@ -52,13 +52,14 @@ pub struct ClaimHintsResponse {
 }
 
 /// 凭证响应 ViewModel；SDK 协议内容保持原始 JSON，交由 SDK 严格解析。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct CredentialResponse {
+    #[salvo(schema(value_type = Object))]
     pub blind_credential: Box<serde_json::value::RawValue>,
 }
 
 /// 管理端申请详情 ViewModel，显式选择可见字段，排除访问密钥摘要和签名原文。
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct AdminEnrollmentView {
     pub view: EnrollmentView,
     pub claims: Claims,
@@ -92,7 +93,7 @@ impl From<&Enrollment> for AdminEnrollmentView {
 }
 
 /// 成员摘要 ViewModel，公开核验与签发状态，不携带数据库关联对象。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct MemberView {
     pub member_ref: String,
     pub request_id: String,
@@ -116,14 +117,14 @@ impl From<Member> for MemberView {
 }
 
 /// 成员详情 ViewModel，将成员摘要与对应申请的管理端详情组合返回。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct MemberDetailView {
     pub member: MemberView,
     pub enrollment: AdminEnrollmentView,
 }
 
 /// 审计事件 ViewModel，只输出审计展示字段，隔离持久化实体。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct AuditEventView {
     pub id: String,
     pub at: u64,
@@ -145,7 +146,7 @@ impl From<AuditRecord> for AuditEventView {
 }
 
 /// 总览 ViewModel，汇总中心配置、各状态数量以及最近申请。
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct OverviewView {
     pub settings: ServiceSettings,
     pub issuer_id: String,

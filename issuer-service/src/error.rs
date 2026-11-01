@@ -9,6 +9,31 @@ pub struct Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+impl salvo_oapi::EndpointOutRegister for Error {
+    fn register(components: &mut salvo_oapi::Components, operation: &mut salvo_oapi::Operation) {
+        use salvo_oapi::ToSchema;
+        // All API groups can be rejected by policy, authentication or storage.
+        for (status, description) in [
+            ("400", "输入格式或字段不合法"),
+            ("401", "访问令牌或会话无效、过期"),
+            ("403", "来源、CSRF 校验或业务策略拒绝"),
+            ("404", "记录不存在或无权访问"),
+            ("409", "修订或当前业务状态冲突"),
+            ("410", "初始化草稿已过期，需维护者显式处理"),
+            ("413", "请求体超过限制或无法读取"),
+            ("422", "字段未通过业务校验"),
+            ("429", "请求频率超过限制"),
+            ("503", "服务不可用或中心尚未初始化"),
+        ] {
+            operation.responses.insert(
+                status,
+                salvo_oapi::Response::new(description)
+                    .add_content("application/json", ApiError::to_schema(components)),
+            );
+        }
+    }
+}
+
 impl Error {
     pub fn new(status: u16, code: &'static str, message: &'static str) -> Self {
         Self {

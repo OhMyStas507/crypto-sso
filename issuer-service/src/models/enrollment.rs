@@ -35,7 +35,7 @@ pub struct Enrollment {
 }
 
 /// 审核历史模型，记录操作人、时间、动作及当次审核决定。
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, salvo_oapi::ToSchema)]
 pub struct ReviewHistory {
     pub actor: String,
     pub at: u64,

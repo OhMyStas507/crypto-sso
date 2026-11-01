@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 crypto-sso-issuer = { version = "0.1.0", path = "../sdk/issuer" }
-crypto-sso-identity-api = { path = "../crates/identity-api" }
+crypto-sso-identity-api = { path = "../crates/identity-api", features = ["openapi"] }
 crypto-sso-telemetry = { path = "../crates/telemetry" }
 tracing.workspace = true
 anyhow.workspace = true
@@ -19,6 +19,7 @@ tokio = { version = "1", features = ["full"] }
 redis = { version = "0.32", default-features = false, features = ["tokio-comp", "connection-manager"] }
 salvo = { version = "1", default-features = false, features = ["server", "server-handle", "http1", "cookie", "test", "affix-state", "session", "csrf", "logging"] }
 salvo-csrf = { version = "1", default-features = false, features = ["session-store", "hmac-cipher"] }
+salvo-oapi = { version = "1", features = ["swagger-ui"] }
 saysion = "0.2"
 toasty = { version = "0.11", features = ["postgresql", "migration", "serde"] }
 toasty-cli = "0.11"

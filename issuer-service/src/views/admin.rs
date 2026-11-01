@@ -10,15 +10,25 @@ use salvo::{
     session::{SessionDepotExt, SessionStore},
 };
 use salvo_csrf::CsrfDepotExt;
+use salvo_oapi::endpoint;
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "取得管理员会话的 CSRF 令牌",
+    responses((status_code = 503, description = "中心尚未初始化或服务不可用", body = crypto_sso_identity_api::ApiError))
+)]
 pub async fn csrf_token_get(depot: &Depot) -> Json<CsrfTokenResponse> {
     Json(CsrfTokenResponse {
         csrf_token: depot.csrf_token().map(str::to_owned),
     })
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "登录并轮换管理员会话 Cookie",
+    request_body = LoginRequest,
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"))
+)]
 pub async fn admin_session_create(
     req: &mut Request,
     depot: &mut Depot,
@@ -43,14 +53,27 @@ pub async fn admin_session_create(
     Ok(Json(admin))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "读取当前管理员会话",
+    security(["admin_session" = []]),
+    responses(
+        (status_code = 401, description = "管理员会话无效或过期", body = crypto_sso_identity_api::ApiError),
+        (status_code = 503, description = "中心尚未初始化或服务不可用", body = crypto_sso_identity_api::ApiError)
+    )
+)]
 pub async fn admin_session_get(depot: &Depot) -> Json<AdminSession> {
     let mut admin = depot.get_typed::<AdminSession>().unwrap().clone();
     admin.csrf_token = depot.csrf_token().unwrap_or_default().into();
     Json(admin)
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "注销管理员会话",
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送")),
+    security(["admin_session" = []])
+)]
 pub async fn admin_session_delete(depot: &mut Depot) -> Result<Json<LogoutResponse>> {
     depot
         .session_mut()
@@ -67,17 +90,30 @@ fn list_query(req: &Request) -> ListQuery {
     }
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "读取管理总览",
+    security(["admin_session" = []])
+)]
 pub async fn overview_get(depot: &Depot) -> Result<Json<OverviewView>> {
     Ok(Json(app(depot).overview_get().await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "读取服务设置",
+    security(["admin_session" = []])
+)]
 pub async fn settings_get(depot: &Depot) -> Result<Json<ServiceSettings>> {
     Ok(Json(app(depot).settings_get().await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "查询申请列表",
+    parameters(("status" = Option<String>, Query, description = "状态筛选"), ("q" = Option<String>, Query, description = "搜索关键词"), ("cursor" = Option<usize>, Query, description = "非负整数偏移；默认 0，后续使用 next_cursor")),
+    security(["admin_session" = []])
+)]
 pub async fn enrollments_list(
     req: &Request,
     depot: &Depot,
@@ -85,7 +121,12 @@ pub async fn enrollments_list(
     Ok(Json(app(depot).enrollments_list(list_query(req)).await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "读取申请详情与审核历史",
+    parameters(("request_id" = String, Path, description = "申请 ID")),
+    security(["admin_session" = []])
+)]
 pub async fn enrollment_get(req: &Request, depot: &Depot) -> Result<Json<AdminEnrollmentView>> {
     Ok(Json(
         app(depot)
@@ -94,12 +135,22 @@ pub async fn enrollment_get(req: &Request, depot: &Depot) -> Result<Json<AdminEn
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "查询成员列表",
+    parameters(("q" = Option<String>, Query, description = "搜索关键词"), ("cursor" = Option<usize>, Query, description = "非负整数偏移；默认 0，后续使用 next_cursor")),
+    security(["admin_session" = []])
+)]
 pub async fn members_list(req: &Request, depot: &Depot) -> Result<Json<Page<MemberView>>> {
     Ok(Json(app(depot).members_list(list_query(req)).await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "读取成员及关联申请详情",
+    parameters(("member_ref" = String, Path, description = "内部成员标识")),
+    security(["admin_session" = []])
+)]
 pub async fn member_get(req: &Request, depot: &Depot) -> Result<Json<MemberDetailView>> {
     Ok(Json(
         app(depot)
@@ -108,7 +159,12 @@ pub async fn member_get(req: &Request, depot: &Depot) -> Result<Json<MemberDetai
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "查询签发列表",
+    parameters(("status" = Option<String>, Query, description = "状态筛选"), ("q" = Option<String>, Query, description = "搜索关键词"), ("cursor" = Option<usize>, Query, description = "非负整数偏移；默认 0，后续使用 next_cursor")),
+    security(["admin_session" = []])
+)]
 pub async fn issuances_list(
     req: &Request,
     depot: &Depot,
@@ -116,12 +172,23 @@ pub async fn issuances_list(
     Ok(Json(app(depot).issuances_list(list_query(req)).await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "查询审计事件",
+    parameters(("cursor" = Option<usize>, Query, description = "非负整数偏移；默认 0，后续使用 next_cursor")),
+    security(["admin_session" = []])
+)]
 pub async fn audit_events_list(req: &Request, depot: &Depot) -> Result<Json<Page<AuditEventView>>> {
     Ok(Json(app(depot).audit_events_list(list_query(req)).await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "保存服务设置",
+    request_body = ServiceSettings,
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["admin_session" = []])
+)]
 pub async fn settings_save(req: &mut Request, depot: &Depot) -> Result<Json<ServiceSettings>> {
     let app = app(depot);
     let admin = depot.get_typed::<AdminSession>().unwrap();
@@ -146,12 +213,24 @@ async fn enrollment_review(
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "批准申请",
+    request_body = ReviewDecision,
+    parameters(("request_id" = String, Path, description = "申请 ID"), ("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["admin_session" = []])
+)]
 pub async fn enrollment_approve(req: &mut Request, depot: &Depot) -> Result<Json<EnrollmentView>> {
     enrollment_review(req, depot, ReviewAction::Approve).await
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "要求修改申请",
+    request_body = ReviewDecision,
+    parameters(("request_id" = String, Path, description = "申请 ID"), ("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["admin_session" = []])
+)]
 pub async fn enrollment_request_changes(
     req: &mut Request,
     depot: &Depot,
@@ -159,12 +238,24 @@ pub async fn enrollment_request_changes(
     enrollment_review(req, depot, ReviewAction::RequestChanges).await
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "拒绝申请",
+    request_body = ReviewDecision,
+    parameters(("request_id" = String, Path, description = "申请 ID"), ("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["admin_session" = []])
+)]
 pub async fn enrollment_reject(req: &mut Request, depot: &Depot) -> Result<Json<EnrollmentView>> {
     enrollment_review(req, depot, ReviewAction::Reject).await
 }
 
-#[handler]
+#[endpoint(
+    tags("管理员"),
+    summary = "重试签发",
+    request_body = ReviewDecision,
+    parameters(("request_id" = String, Path, description = "申请 ID"), ("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["admin_session" = []])
+)]
 pub async fn issuance_retry(req: &mut Request, depot: &Depot) -> Result<Json<EnrollmentView>> {
     enrollment_review(req, depot, ReviewAction::RetryIssuance).await
 }

@@ -78,6 +78,19 @@ bun run --cwd examples/relying-party/web build
 
 将构建产物交由独立 Nginx 或其他前端托管服务提供。`deploy/nginx.admin.conf.template` 给出了管理前端独立部署的配置：前端静态文件放到 `${FRONTEND_STATIC_ROOT}/admin/`，由前端网关将 `/api` 转发到 `${ISSUER_API_UPSTREAM}`。模板变量见 `.env.example`；生产域名应同时出现在 `ADMIN_ALLOWED_ORIGINS_JSON` 中。Rust 服务无需访问前端目录，部署包也无需携带前端构建产物。
 
+### OpenAPI 与 Swagger UI
+
+issuer-service 启动后始终提供以下地址，初始化完成前也可访问：
+
+- Swagger UI：`/api/docs/swagger-ui/`，开发 API 直连地址为 [http://127.0.0.1:3000/api/docs/swagger-ui/](http://127.0.0.1:3000/api/docs/swagger-ui/)。
+- OpenAPI JSON：`/api/docs/openapi.json`。
+
+文档由全部 36 个 HTTP 端点的 `#[endpoint(...)]`、请求/响应类型的 `ToSchema` 和实际路由树生成，无需维护独立 YAML。Swagger 的 HTML、JavaScript 和 CSS 内嵌在 Rust 服务中，无需 CDN、前端构建或额外容器。开发 Vite 代理和生产 Nginx 模板已有的 `/api/` 转发同时覆盖文档和静态资源，可在管理前端同一域名下打开 `/api/docs/swagger-ui/`。
+
+在 Swagger 中调用申请接口时，通过 Authorize 填写申请访问密钥（不包含 `Bearer ` 前缀）。管理员和初始化写接口使用各自会话：先调用对应 `/api/v1/admin/csrf` 或 `/api/v1/setup/csrf`，把返回的令牌填入写接口的 `x-csrf-token`；再登录或验证初始化码。Cookie 由浏览器自动接收、携带，登录或验证后重新获取同组 CSRF 令牌。需要幂等键的操作填写 `idempotency-key`，重试同一次操作时保留原值。界面所在 Origin 必须包含在 `ADMIN_ALLOWED_ORIGINS_JSON` 中；直接在 API 端口调试时同样需要加入该 Origin。生产使用 HTTPS 并保持 `COOKIE_SECURE=true`。
+
+文档和 UI 本身允许匿名读取，业务接口继续执行原有会话、来源、CSRF 与访问密钥校验。部署无需新增开关。修改端点后运行 `cargo test -p issuer-service --lib views::docs`，验证端点覆盖、schema 引用、参数、安全方案、特殊状态码及内嵌资源。
+
 示例应用前端同样独立托管，并把 `/api/v1/login` 代理到应用后端；生产 `RP_ORIGIN` 改为实际应用域名，钱包重新独立核对该 Origin。
 
 钱包启动脚本读取同一环境文件，向 Tauri 注入开发地址。`bun run --cwd wallet desktop:build` 构建桌面包；部署运行时仍需从进程环境或 `.env` 提供钱包目录、网络限制和 SDK 限制。路径建议用绝对路径，初始化脚本会自动展开。

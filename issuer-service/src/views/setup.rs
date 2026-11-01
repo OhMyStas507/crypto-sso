@@ -10,6 +10,7 @@ use salvo::{
     prelude::*,
     session::{SessionDepotExt, SessionStore},
 };
+use salvo_oapi::endpoint;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
@@ -77,12 +78,17 @@ pub async fn require_session(depot: &mut Depot, res: &mut Response, ctrl: &mut F
     }
 }
 
-#[handler]
+#[endpoint(tags("初始化"), summary = "查询初始化状态")]
 pub async fn status(depot: &Depot) -> Result<Json<SetupStatus>> {
     Ok(Json(app(depot).setup_status().await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "验证部署初始化码并建立初始化会话",
+    request_body = SetupVerify,
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"))
+)]
 pub async fn verify(req: &mut Request, depot: &mut Depot) -> Result<Json<SetupDraft>> {
     let input: SetupVerify = body(req, 4096).await?;
     let app = app(depot);
@@ -108,23 +114,41 @@ pub async fn verify(req: &mut Request, depot: &mut Depot) -> Result<Json<SetupDr
     Ok(Json(app.setup_draft(&draft_id).await?))
 }
 
-#[handler]
-pub async fn logout(depot: &mut Depot) -> Result<Json<serde_json::Value>> {
+#[endpoint(
+    tags("初始化"),
+    summary = "注销初始化会话",
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"))
+)]
+pub async fn logout(
+    depot: &mut Depot,
+) -> Result<Json<crate::viewmodels::contracts::LogoutResponse>> {
     depot
         .session_mut()
         .ok_or_else(Error::unavailable)?
         .destroy();
-    Ok(Json(serde_json::json!({"logged_out":true})))
+    Ok(Json(crate::viewmodels::contracts::LogoutResponse {
+        logged_out: true,
+    }))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "读取已验证会话的初始化草稿",
+    security(["setup_session" = []])
+)]
 pub async fn draft(depot: &Depot) -> Result<Json<SetupDraft>> {
     Ok(Json(app(depot).setup_draft(&grant(depot)?.draft_id).await?))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "保存管理员草稿",
+    request_body = SetupAdminInput,
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["setup_session" = []])
+)]
 pub async fn admin(req: &mut Request, depot: &Depot) -> Result<Json<SetupDraft>> {
-    let input = body(req, 4096).await?;
+    let input: SetupAdminInput = body(req, 4096).await?;
     Ok(Json(
         app(depot)
             .setup_admin(
@@ -136,9 +160,15 @@ pub async fn admin(req: &mut Request, depot: &Depot) -> Result<Json<SetupDraft>>
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "保存公开服务信息草稿",
+    request_body = SetupServiceInput,
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["setup_session" = []])
+)]
 pub async fn service(req: &mut Request, depot: &Depot) -> Result<Json<SetupDraft>> {
-    let input = body(req, 16384).await?;
+    let input: SetupServiceInput = body(req, 16384).await?;
     Ok(Json(
         app(depot)
             .setup_service(
@@ -150,9 +180,15 @@ pub async fn service(req: &mut Request, depot: &Depot) -> Result<Json<SetupDraft
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "生成候选签发身份",
+    request_body = SetupKeyInput,
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["setup_session" = []])
+)]
 pub async fn generate(req: &mut Request, depot: &Depot) -> Result<Json<SetupKeyView>> {
-    let input = body(req, 4096).await?;
+    let input: SetupKeyInput = body(req, 4096).await?;
     Ok(Json(
         app(depot)
             .setup_generate(
@@ -164,7 +200,12 @@ pub async fn generate(req: &mut Request, depot: &Depot) -> Result<Json<SetupKeyV
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "读取候选密钥生成状态",
+    parameters(("operation_id" = String, Path, description = "初始化操作 ID")),
+    security(["setup_session" = []])
+)]
 pub async fn key(req: &Request, depot: &Depot) -> Result<Json<SetupKeyView>> {
     Ok(Json(
         app(depot)
@@ -173,7 +214,12 @@ pub async fn key(req: &Request, depot: &Depot) -> Result<Json<SetupKeyView>> {
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "创建最终提交操作并设置十分钟有效的回执 Cookie",
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送"), ("idempotency-key" = String, Header, description = "同一次操作的重试必须使用相同幂等键")),
+    security(["setup_session" = []])
+)]
 pub async fn begin(
     req: &Request,
     depot: &Depot,
@@ -195,8 +241,13 @@ pub async fn begin(
     Ok(Json(view))
 }
 
-#[handler]
-pub async fn operation(req: &Request, depot: &Depot) -> Result<Json<SetupOperation>> {
+#[endpoint(
+    tags("初始化"),
+    summary = "通过回执 Cookie 查询最终提交结果",
+    parameters(("operation_id" = String, Path, description = "初始化操作 ID")),
+    security(["setup_receipt" = []])
+)]
+pub async fn operation_get(req: &Request, depot: &Depot) -> Result<Json<SetupOperation>> {
     let cookie = req
         .cookie("crypto_sso_setup_receipt")
         .map(|c| c.value())
@@ -208,9 +259,15 @@ pub async fn operation(req: &Request, depot: &Depot) -> Result<Json<SetupOperati
     ))
 }
 
-#[handler]
+#[endpoint(
+    tags("初始化"),
+    summary = "完成初始化并销毁初始化会话",
+    request_body = SetupCompleteInput,
+    parameters(("x-csrf-token" = String, Header, description = "先调用本组 csrf 接口取得令牌；浏览器自动携带同组 Cookie"), ("Origin" = String, Header, description = "必须属于 ADMIN_ALLOWED_ORIGINS_JSON；浏览器自动发送")),
+    security(["setup_session" = []])
+)]
 pub async fn complete(req: &mut Request, depot: &mut Depot) -> Result<Json<SetupReceipt>> {
-    let input = body(req, 4096).await?;
+    let input: SetupCompleteInput = body(req, 4096).await?;
     let result = app(depot)
         .setup_complete(&grant(depot)?.draft_id, input)
         .await?;
@@ -246,4 +303,15 @@ pub async fn verification_rate(depot: &Depot, res: &mut Response, ctrl: &mut Flo
         ));
         ctrl.skip_rest();
     }
+}
+
+/// 取得初始化会话的 CSRF 令牌。
+#[endpoint(tags("初始化"))]
+pub async fn csrf_token_get(
+    depot: &Depot,
+) -> Json<crate::viewmodels::contracts::CsrfTokenResponse> {
+    use salvo_csrf::CsrfDepotExt;
+    Json(crate::viewmodels::contracts::CsrfTokenResponse {
+        csrf_token: depot.csrf_token().map(str::to_owned),
+    })
 }

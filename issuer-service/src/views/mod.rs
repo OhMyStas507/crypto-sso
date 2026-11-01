@@ -1,5 +1,6 @@
 //! View 层：Salvo 路由、HTTP 提取、会话适配与类型化响应渲染。
 mod admin;
+mod docs;
 mod middleware;
 mod public;
 mod setup;
@@ -10,6 +11,7 @@ use crate::{
 };
 use salvo::{http::cookie::SameSite, prelude::*, session::SessionHandler};
 use salvo_csrf::HeaderFinder;
+use salvo_oapi::endpoint;
 use serde::de::DeserializeOwned;
 
 /// Apply Salvo's native logger before routing middleware so short-circuited
@@ -53,6 +55,24 @@ pub fn router(app: Application) -> Router {
         app.admin_secrets.csrf_key,
         HeaderFinder::new("x-csrf-token"),
     );
+    let routes = routes(
+        Router::with_path("admin")
+            .hoop(sessions)
+            .hoop(middleware::origin_check)
+            .hoop(csrf),
+        Router::with_path("setup")
+            .hoop(setup_sessions)
+            .hoop(middleware::origin_check)
+            .hoop(setup_csrf),
+    )
+    .hoop(affix_state::inject(app))
+    .hoop(affix_state::inject(setup::VerificationRate::default()));
+    docs::attach(routes)
+}
+
+// Keep a single route tree for runtime and OpenAPI coverage tests. Session/CSRF
+// middleware is supplied by the production builder above.
+fn routes(admin: Router, setup: Router) -> Router {
     let setup_protected = Router::new()
         .hoop(setup::require_session)
         .push(
@@ -109,19 +129,16 @@ pub fn router(app: Application) -> Router {
         .hoop(middleware::request_policy_apply)
         .hoop(middleware::center_ready)
         .push(
-            Router::with_path("setup")
-                .hoop(setup_sessions)
-                .hoop(middleware::origin_check)
-                .hoop(setup_csrf)
+            setup
                 .push(Router::with_path("status").get(setup::status))
-                .push(Router::with_path("csrf").get(admin::csrf_token_get))
+                .push(Router::with_path("csrf").get(setup::csrf_token_get))
                 .push(
                     Router::with_path("session")
                         .hoop(setup::verification_rate)
                         .post(setup::verify)
                         .delete(setup::logout),
                 )
-                .push(Router::with_path("operations/{operation_id}").get(setup::operation))
+                .push(Router::with_path("operations/{operation_id}").get(setup::operation_get))
                 .push(setup_protected),
         )
         .push(Router::with_path("service-info").get(public::service_info_get))
@@ -137,23 +154,18 @@ pub fn router(app: Application) -> Router {
                 ),
         )
         .push(
-            Router::with_path("admin")
-                .hoop(sessions)
-                .hoop(middleware::origin_check)
-                .hoop(csrf)
+            admin
                 .push(Router::with_path("csrf").get(admin::csrf_token_get))
                 .push(Router::with_path("sessions").post(admin::admin_session_create))
                 .push(protected),
         );
 
     Router::new()
-        .hoop(affix_state::inject(app))
-        .hoop(affix_state::inject(setup::VerificationRate::default()))
         .push(Router::with_path("health").get(health_get))
         .push(api)
 }
 
-#[handler]
+#[endpoint(tags("健康检查"), summary = "检查服务进程是否可响应")]
 async fn health_get() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".into(),
