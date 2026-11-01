@@ -1,3 +1,4 @@
+mod admin_secrets;
 pub mod config;
 pub mod error;
 mod key_store;

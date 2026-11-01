@@ -70,7 +70,7 @@ async fn http_get<T: serde::de::DeserializeOwned>(client: &Client, url: &str) ->
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "requires a dedicated PostgreSQL TEST_DATABASE_URL and Windows DPAPI"]
+#[ignore = "requires dedicated TEST_DATABASE_URL, TEST_REDIS_URL and Windows DPAPI"]
 async fn registration_approval_wallet_recovery_and_offline_login() {
     let _ = dotenvy::dotenv();
     let root_database =
@@ -97,12 +97,11 @@ async fn registration_approval_wallet_recovery_and_offline_login() {
     let config = Config {
         bind: base.trim_start_matches("http://").into(),
         database_url: database.clone(),
+        redis_url: std::env::var("TEST_REDIS_URL").expect("需要 TEST_REDIS_URL"),
         admin_allowed_origins: vec![base.clone()],
         setup_dir: temporary.path().join("setup"),
         setup_storage_key: [21; 32],
         session_ttl: 3600,
-        session_secret: token() + &token(),
-        csrf_key: [7; 32],
         secure_cookie: false,
         worker_interval_ms: 10,
         lease_seconds: 60,

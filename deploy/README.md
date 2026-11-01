@@ -20,13 +20,17 @@ bun install --cwd examples/relying-party/web
 bun install --cwd scripts
 ```
 
-`setup-dev.js` 使用 Node.js 内置模块创建 `.env`，生成独立的会话、CSRF 及 `SETUP_STORAGE_KEY` 秘密；已有 `.env` 时拒绝覆盖。不再预置管理员或生成 issuer 私钥，组织身份在向导中填写。`SETUP_STORAGE_DIR` 指向受保护的持久目录；Windows 通过原生 DACL 仅允许当前服务账号访问，Unix 使用目录权限 `0700`。备份时同时保护此目录和分开保存的 `SETUP_STORAGE_KEY`；丢失或更换加密根密钥会导致原密钥无法读取。
+`setup-dev.js` 使用 Node.js 内置模块创建 `.env`，生成 RP 会话、RP CSRF 及 `SETUP_STORAGE_KEY` 秘密；已有 `.env` 时拒绝覆盖。管理会话和管理 CSRF 密钥改由后端启动时自动生成并保存在 Redis。不再预置管理员或生成 issuer 私钥，组织身份在向导中填写。`SETUP_STORAGE_DIR` 指向受保护的持久目录；Windows 通过原生 DACL 仅允许当前服务账号访问，Unix 使用目录权限 `0700`。备份时同时保护此目录和分开保存的 `SETUP_STORAGE_KEY`；丢失或更换加密根密钥会导致原密钥无法读取。
 
-已有 `.env` 不会自动修改。开发配置需包含 `SETUP_STORAGE_DIR` 和随机生成的 64 位十六进制 `SETUP_STORAGE_KEY`；管理员和签发身份统一通过 WebUI 创建，不提供部署凭据导入或旧数据适配。
+已有 `.env` 不会自动修改。开发配置需包含 `SETUP_STORAGE_DIR`、随机生成的 64 位十六进制 `SETUP_STORAGE_KEY` 和 `REDIS_URL`（开发默认为 `redis://127.0.0.1:6379/0`）；删除旧的 `ADMIN_SESSION_SECRET`、`ADMIN_CSRF_KEY`，后端不再读取这两项。管理员和签发身份统一通过 WebUI 创建，不提供部署凭据导入或旧数据适配。
+
+后端首次启动在 Redis 中以原始字节保存 `issuer_service:admin_session_secret`（64 字节）和 `issuer_service:admin_csrf_key`（32 字节），不设置过期时间；后续启动复用已有值。原子 `SET NX` 保证并发启动的实例使用相同密钥。Redis 无法连接或已有密钥格式错误时启动失败，不会降级为进程内随机密钥或覆盖损坏值。生产需为 Redis 配置持久化并保证所有中心实例使用同一个 Redis 逻辑库；清空这些键后重新启动会生成新密钥，原管理及初始化 Cookie、CSRF 令牌随之失效。
 
 `dev-compose.mjs` 为 Docker Compose 显式设置 `COMPOSE_DISABLE_ENV_FILE=true`，可透传 `up`、`ps`、`logs`、`down` 等命令，既不加载 `.env`，也不依赖其中的值。也可在终端先设置此开关，再直接运行 `docker compose -f deploy/compose.dev.yaml ...`。
 
 PostgreSQL 和 Redis 的数据目录使用 `tmpfs`，Redis 同时关闭 RDB 和 AOF 持久化。停止或删除容器都会清空数据；每次重新启动 PostgreSQL 后，需再次运行 `node scripts/init-dev-db.mjs` 创建示例和测试数据库。
+
+运行初始化和 RP 端到端测试时，还需配置 `TEST_REDIS_URL`（开发默认为 `redis://127.0.0.1:6379/1`）。Redis 密钥并发测试可用 `cargo test -p issuer-service --lib admin_secrets -- --ignored` 运行，仅操作随机生成的 `issuer_service:test:` 前缀键，结束时删除测试键。
 
 `init-dev-db.mjs` 仅运行 Compose 中声明的 `postgres-init` 服务，不读取应用配置。该服务幂等创建 `crypto_sso_demo` 和 `crypto_sso_test`，不清除已有数据；使用独立 `init` profile 避免普通 `up --wait` 把初始化任务当作长期运行服务。修改开发数据库设置时，更新 Compose 并同步应用 `.env` 中的连接字符串。`TEST_DATABASE_URL` 必须指向独立的、名称以 `_test` 结尾的数据库；集成测试会清空这个数据库内的业务记录。
 
@@ -116,7 +120,7 @@ cargo run -p issuer-service --bin issuer-db -- migration generate --name describ
 
 Cookie、会话签名、加载、轮换、有效期与退出由 Salvo `SessionHandler` 负责，Toasty 只实现框架的 `SessionStore` 持久化适配。管理路由使用 Salvo Session CSRF 中间件与来源校验，中间件保护挂在路由树对应分组上；各接口由独立 Handler 处理。
 
-生产将 `COOKIE_SECURE=true`，使用 HTTPS 反向代理，准确设置公开 Origin 和允许的管理 Origin，使用独立随机会话密钥与 CSRF 密钥。固定 issuer 私钥应置于受限目录，与数据库备份、前端资源分别管理。更换启动配置中的 issuer 与数据库记录不符时，服务拒绝启动。Redis 仅由既有开发 Compose 提供，当前实现不依赖它。
+生产将 `COOKIE_SECURE=true`，使用 HTTPS 反向代理，准确设置公开 Origin 和允许的管理 Origin；管理会话与 CSRF 密钥通过 `REDIS_URL` 指向的 Redis 统一保存，RP 的会话与 CSRF 密钥仍独立配置。固定 issuer 私钥应置于受限目录，与数据库备份、前端资源分别管理。更换启动配置中的 issuer 与数据库记录不符时，服务拒绝启动。
 
 日志统一使用 Rust `tracing`，三个应用及迁移 CLI 在读取 `.env` 后通过共享 `crypto-sso-telemetry` 初始化 subscriber，输出到标准错误。`RUST_LOG` 为必填环境变量，示例配置为 `warn,salvo_extra::logging=info,issuer_service=info,crypto_sso_relying_party=info,wallet_lib=info`；已有 `.env` 需补上此项。临时排查可把单个应用 target 改为 `debug` 或 `trace`，进程环境优先于 `.env`。Docker 基础设施仍仅使用 Compose 中的配置。
 

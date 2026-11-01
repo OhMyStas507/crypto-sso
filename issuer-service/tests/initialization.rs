@@ -41,12 +41,11 @@ impl Fixture {
         let config = Config {
             bind: "127.0.0.1:0".into(),
             database_url: isolated.to_string(),
+            redis_url: std::env::var("TEST_REDIS_URL").expect("需要 TEST_REDIS_URL"),
             admin_allowed_origins: vec![origin.into()],
             setup_dir: temp.path().join("protected"),
             setup_storage_key: [29; 32],
             session_ttl: 3600,
-            session_secret: token() + &token(),
-            csrf_key: [8; 32],
             secure_cookie: false,
             worker_interval_ms: 1000,
             lease_seconds: 60,
@@ -165,7 +164,7 @@ fn write(client: &Client, base: &str, path: &str, csrf: &str) -> reqwest::Reques
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "需要独立 PostgreSQL TEST_DATABASE_URL"]
+#[ignore = "需要独立 PostgreSQL TEST_DATABASE_URL 和 TEST_REDIS_URL"]
 async fn empty_database_http_setup_and_normal_login() {
     let acceptor = TcpListener::new("127.0.0.1:0").bind().await;
     let base = format!("http://{}", acceptor.inner().local_addr().unwrap());
@@ -466,7 +465,7 @@ async fn empty_database_http_setup_and_normal_login() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "需要独立 PostgreSQL TEST_DATABASE_URL"]
+#[ignore = "需要独立 PostgreSQL TEST_DATABASE_URL 和 TEST_REDIS_URL"]
 async fn key_failure_recovery_and_concurrent_completion() {
     let fixture = Fixture::new("http://localhost").await;
     let ready = fixture.ready().await;
@@ -594,7 +593,7 @@ async fn key_failure_recovery_and_concurrent_completion() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "需要独立 PostgreSQL TEST_DATABASE_URL"]
+#[ignore = "需要独立 PostgreSQL TEST_DATABASE_URL 和 TEST_REDIS_URL"]
 async fn expired_draft_requires_explicit_discard_and_residual_data_is_fenced() {
     let fixture = Fixture::new("http://localhost").await;
     let ready = fixture.ready().await;
@@ -666,7 +665,7 @@ async fn expired_draft_requires_explicit_discard_and_residual_data_is_fenced() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "需要 PostgreSQL、已构建管理前端、Node.js 和 Playwright 浏览器"]
+#[ignore = "需要 PostgreSQL、Redis、已构建管理前端、Node.js 和 Playwright 浏览器"]
 async fn real_browser_completes_setup_and_recovers_lost_response() {
     let acceptor = TcpListener::new("127.0.0.1:0").bind().await;
     let base = format!("http://{}", acceptor.inner().local_addr().unwrap());

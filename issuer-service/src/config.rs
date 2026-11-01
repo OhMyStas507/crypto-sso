@@ -31,12 +31,11 @@ pub fn canonical_origin(value: &str) -> Result<String> {
 pub struct Config {
     pub bind: String,
     pub database_url: String,
+    pub redis_url: String,
     pub admin_allowed_origins: Vec<String>,
     pub setup_dir: PathBuf,
     pub setup_storage_key: [u8; 32],
     pub session_ttl: u64,
-    pub session_secret: String,
-    pub csrf_key: [u8; 32],
     pub secure_cookie: bool,
     pub worker_interval_ms: u64,
     pub lease_seconds: u64,
@@ -49,6 +48,7 @@ impl Config {
         let config = Self {
             bind: required("ISSUER_BIND")?,
             database_url: required("DATABASE_URL")?,
+            redis_url: required("REDIS_URL")?,
             admin_allowed_origins: serde_json::from_str(&required("ADMIN_ALLOWED_ORIGINS_JSON")?)?,
             setup_dir: env::var("SETUP_STORAGE_DIR")
                 .unwrap_or_else(|_| ".dev-data/identity-center".into())
@@ -57,10 +57,6 @@ impl Config {
                 .try_into()
                 .map_err(|_| anyhow::anyhow!("SETUP_STORAGE_KEY must be 32 bytes of hex"))?,
             session_ttl: number("ADMIN_SESSION_TTL_SECONDS")?,
-            session_secret: required("ADMIN_SESSION_SECRET")?,
-            csrf_key: hex::decode(required("ADMIN_CSRF_KEY")?)?
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("ADMIN_CSRF_KEY must be 32 bytes of hex"))?,
             secure_cookie: number("COOKIE_SECURE")?,
             worker_interval_ms: number("ISSUER_WORKER_INTERVAL_MS")?,
             lease_seconds: number("ISSUER_LEASE_SECONDS")?,
@@ -81,10 +77,6 @@ impl Config {
             "timeouts must be positive"
         );
         ensure!(config.body_limit > 0, "HTTP body limit must be positive");
-        ensure!(
-            config.session_secret.len() >= 64,
-            "ADMIN_SESSION_SECRET must contain at least 64 bytes"
-        );
         Ok(config)
     }
 }

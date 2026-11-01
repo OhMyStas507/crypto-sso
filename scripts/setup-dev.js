@@ -27,8 +27,6 @@ function main() {
 
   const replacements = {
     REPLACE_WITH_SETUP_STORAGE_KEY: randomBytes(32).toString("hex"),
-    REPLACE_WITH_64_OR_MORE_RANDOM_BYTES: randomBytes(64).toString("hex"),
-    REPLACE_WITH_64_HEX_CHARACTERS: randomBytes(32).toString("hex"),
     REPLACE_WITH_A_DIFFERENT_64_BYTE_SECRET: randomBytes(64).toString("hex"),
     REPLACE_WITH_A_DIFFERENT_64_HEX_KEY: randomBytes(32).toString("hex"),
   };

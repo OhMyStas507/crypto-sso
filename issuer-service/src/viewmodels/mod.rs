@@ -9,6 +9,7 @@ mod settings;
 mod setup;
 
 use crate::{
+    admin_secrets::AdminSecrets,
     config::Config,
     error::{Error, Result},
     models::*,
@@ -23,16 +24,19 @@ use std::sync::{Arc, RwLock};
 pub struct Application {
     pub config: Arc<Config>,
     pub store: Store,
+    pub(crate) admin_secrets: Arc<AdminSecrets>,
     issuer: Arc<RwLock<Option<Arc<Issuer>>>>,
 }
 
 impl Application {
     #[tracing::instrument(skip_all)]
     pub async fn bootstrap(config: Config) -> anyhow::Result<Self> {
+        let admin_secrets = Arc::new(AdminSecrets::load(&config.redis_url).await?);
         let store = Store::connect(&config.database_url).await?;
         let app = Self {
             config: Arc::new(config),
             store,
+            admin_secrets,
             issuer: Arc::new(RwLock::new(None)),
         };
         app.initialize_state().await?;

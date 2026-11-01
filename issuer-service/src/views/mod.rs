@@ -29,7 +29,7 @@ pub fn router(app: Application) -> Router {
             store: app.store.clone(),
             namespace: "session".into(),
         },
-        app.config.session_secret.as_bytes(),
+        &app.admin_secrets.session_secret,
     )
     .cookie_name("crypto_sso_admin")
     .cookie_path("/api/v1/admin")
@@ -38,14 +38,16 @@ pub fn router(app: Application) -> Router {
     .secure_cookie(app.config.secure_cookie)
     .build()
     .expect("validated session configuration");
-    let csrf =
-        salvo_csrf::hmac_session_csrf(app.config.csrf_key, HeaderFinder::new("x-csrf-token"));
+    let csrf = salvo_csrf::hmac_session_csrf(
+        app.admin_secrets.csrf_key,
+        HeaderFinder::new("x-csrf-token"),
+    );
     let setup_sessions = SessionHandler::builder(
         PgSessionStore {
             store: app.store.clone(),
             namespace: "setup".into(),
         },
-        app.config.session_secret.as_bytes(),
+        &app.admin_secrets.session_secret,
     )
     .cookie_name("crypto_sso_setup")
     .cookie_path("/api/v1/setup")
@@ -54,8 +56,10 @@ pub fn router(app: Application) -> Router {
     .secure_cookie(app.config.secure_cookie)
     .build()
     .expect("validated setup session configuration");
-    let setup_csrf =
-        salvo_csrf::hmac_session_csrf(app.config.csrf_key, HeaderFinder::new("x-csrf-token"));
+    let setup_csrf = salvo_csrf::hmac_session_csrf(
+        app.admin_secrets.csrf_key,
+        HeaderFinder::new("x-csrf-token"),
+    );
     let setup_protected = Router::new()
         .hoop(setup::require_session)
         .push(
